@@ -1,0 +1,18 @@
+# Office temp / lock files
+~$*
+
+# OS
+.DS_Store
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.log
+.vite/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp

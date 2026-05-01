@@ -1,0 +1,443 @@
+{
+  "employees": [
+    {
+      "firstName": "David",
+      "surname": "Friend",
+      "position": "Sales Director",
+      "department": "S&M",
+      "location": "US",
+      "startDate": "Current",
+      "salary": 220000
+    },
+    {
+      "firstName": "Jonny",
+      "surname": "Charles",
+      "position": "Sales Manager",
+      "department": "S&M",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 105600
+    },
+    {
+      "firstName": "Muhammad",
+      "surname": "Baqir",
+      "position": "Marketing",
+      "department": "S&M",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 74316.0528
+    },
+    {
+      "firstName": "",
+      "surname": "East Coast",
+      "position": "Enterprise Sales Manager",
+      "department": "S&M",
+      "location": "US",
+      "startDate": "2026-10",
+      "salary": 158400
+    },
+    {
+      "firstName": "",
+      "surname": "West Coast",
+      "position": "Enterprise Sales Manager",
+      "department": "S&M",
+      "location": "US",
+      "startDate": "2027-01",
+      "salary": 158400
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Therapeutic 1",
+      "department": "S&M",
+      "location": "US",
+      "startDate": "2027-04",
+      "salary": 158400
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Therapeutic 2",
+      "department": "S&M",
+      "location": "UK",
+      "startDate": "2027-06",
+      "salary": 158400
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Sales manager",
+      "department": "S&M",
+      "location": "US",
+      "startDate": "2027-10",
+      "salary": 125000
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Sales Ops / Lead Gen",
+      "department": "S&M",
+      "location": "UK",
+      "startDate": "2027-10",
+      "salary": 79200
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Product Marketeer",
+      "department": "S&M",
+      "location": "UK",
+      "startDate": "2027-03",
+      "salary": 105600
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Comms",
+      "department": "S&M",
+      "location": "UK",
+      "startDate": "2028-06",
+      "salary": 79200
+    },
+    {
+      "firstName": "Daniella",
+      "surname": "Currie",
+      "position": "HR",
+      "department": "G&A",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 108847.25280000002
+    },
+    {
+      "firstName": "Blaise",
+      "surname": "Thomson",
+      "position": "CEO",
+      "department": "G&A",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 60984
+    },
+    {
+      "firstName": "Emmanuel",
+      "surname": "Mensah",
+      "position": "IT",
+      "department": "G&A",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 82499.94720000001
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "CFO",
+      "department": "G&A",
+      "location": "UK",
+      "startDate": "2027-01",
+      "salary": 102960
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Office Manager",
+      "department": "G&A",
+      "location": "UK",
+      "startDate": "2028-03",
+      "salary": 82499.94720000001
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Ops Assistant",
+      "department": "G&A",
+      "location": "UK",
+      "startDate": "2028-07",
+      "salary": 82499.94720000001
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Extra",
+      "department": "G&A",
+      "location": "UK",
+      "startDate": "2029-01",
+      "salary": 82499.94720000001
+    },
+    {
+      "firstName": "Joao",
+      "surname": "Ribeiro Goncalves",
+      "position": "CTO",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 178200
+    },
+    {
+      "firstName": "Cai",
+      "surname": "Quek",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 114840
+    },
+    {
+      "firstName": "Tomike",
+      "surname": "Mzhavia",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 147180.0528
+    },
+    {
+      "firstName": "James",
+      "surname": "Marchant",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 135300.0528
+    },
+    {
+      "firstName": "Nikolas",
+      "surname": "Ilia",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 129162.05280000002
+    },
+    {
+      "firstName": "Christopher",
+      "surname": "Clarke",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 112199.9472
+    },
+    {
+      "firstName": "Oleksiy",
+      "surname": "Chornobay",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 115500.0528
+    },
+    {
+      "firstName": "Ali",
+      "surname": "Amin-Nejad",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 124079.9472
+    },
+    {
+      "firstName": "Maria-Bristena",
+      "surname": "Oprisanu",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 124079.9472
+    },
+    {
+      "firstName": "Naaman",
+      "surname": "Tammuz",
+      "position": "Chief Product Officer",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 213840
+    },
+    {
+      "firstName": "Lily",
+      "surname": "Martyn",
+      "position": "Regulatory",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 99000
+    },
+    {
+      "firstName": "Sharlyne",
+      "surname": "Slassi",
+      "position": "",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 121109.9472
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Designer",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "2027-04",
+      "salary": 125292.75660000002
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Product Manager",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "2026-10",
+      "salary": 125292.75660000002
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Partnership Manager",
+      "department": "Engineering",
+      "location": "UK",
+      "startDate": "2028-06",
+      "salary": 125292.75660000002
+    },
+    {
+      "firstName": "Yasmin",
+      "surname": "McQuinlan",
+      "position": "Customer Success",
+      "department": "Product Support",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 85800.0528
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Site Acquisition",
+      "department": "Product Support",
+      "location": "UK",
+      "startDate": "2026-09",
+      "salary": 105600
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Site Acquisition",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "2027-01",
+      "salary": 105600
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Site Acquisition",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "2027-06",
+      "salary": 105600
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Site Acquisition",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "2028-01",
+      "salary": 105600
+    },
+    {
+      "firstName": "Judit",
+      "surname": "Greskovits",
+      "position": "",
+      "department": "Product Support",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 138598.73280000003
+    },
+    {
+      "firstName": "Merlin",
+      "surname": "Gough",
+      "position": "",
+      "department": "Product Support",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 137280.0528
+    },
+    {
+      "firstName": "Airlangga",
+      "surname": "Gunawan",
+      "position": "",
+      "department": "Product Support",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 121440
+    },
+    {
+      "firstName": "Ruaridh James",
+      "surname": "Newman",
+      "position": "",
+      "department": "Product Support",
+      "location": "UK",
+      "startDate": "Current",
+      "salary": 125400.05280000002
+    },
+    {
+      "firstName": "Dipti",
+      "surname": "Rao",
+      "position": "Customer Success",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "Current",
+      "salary": 125004
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Customer Success",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "2027-06",
+      "salary": 125004
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Customer Success",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "2028-07",
+      "salary": 125004
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Customer Success",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "2028-01",
+      "salary": 125004
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Customer Success",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "2029-03",
+      "salary": 125004
+    },
+    {
+      "firstName": "",
+      "surname": "",
+      "position": "Customer Success",
+      "department": "Product Support",
+      "location": "US",
+      "startDate": "2029-07",
+      "salary": 125004
+    }
+  ],
+  "assumptions": {
+    "niRate": 0.145,
+    "pensionRate": 0.03,
+    "annualInflationRate": 0.05,
+    "inflationStartYear": 2027,
+    "inflationStartMonth": 4
+  }
+}
