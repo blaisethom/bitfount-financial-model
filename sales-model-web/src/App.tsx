@@ -20,6 +20,8 @@ import EmployeeAssumptionsGrid from './components/EmployeeAssumptionsGrid';
 import CommissionGrid from './components/CommissionGrid';
 import StackedBarChart from './components/StackedBarChart';
 import Modal from './components/Modal';
+import EnginePreview from './components/EnginePreview';
+import { exampleModel } from './models/example';
 import { useUndoable } from './useUndoable';
 import { annualSummaryByType, contractValueHistory, quarterlyPivot, syncHubSpot } from './hubspot';
 import {
@@ -53,7 +55,7 @@ const TYPE_LABEL: Record<TrialType, string> = {
   C: 'Type C (Large)',
 };
 
-type View = 'model' | 'total' | 'hubspot' | 'hubspot-deals' | 'employees' | 'costs' | 'budget';
+type View = 'model' | 'total' | 'hubspot' | 'hubspot-deals' | 'employees' | 'costs' | 'budget' | 'engine';
 
 export default function App() {
   const {
@@ -296,6 +298,15 @@ export default function App() {
           Budget P&amp;L
           <span className="view-tab-sub">EBITDA ${(ebitdaTotal / 1e6).toFixed(1)}M · 6yr</span>
         </button>
+        <button
+          role="tab"
+          aria-selected={view === 'engine'}
+          className={`view-tab ${view === 'engine' ? 'active' : ''}`}
+          onClick={() => setView('engine')}
+        >
+          Engine (preview)
+          <span className="view-tab-sub">v2 declarative</span>
+        </button>
       </div>
 
       {view === 'model' ? (
@@ -331,6 +342,8 @@ export default function App() {
         />
       ) : view === 'costs' ? (
         <CostsView input={input} output={output} updateCostLine={updateCostLine} />
+      ) : view === 'engine' ? (
+        <EnginePreview model={exampleModel} />
       ) : (
         <BudgetView input={input} output={output} />
       )}
