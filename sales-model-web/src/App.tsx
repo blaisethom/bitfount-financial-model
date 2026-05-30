@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
 import './App.css';
@@ -10,6 +10,7 @@ import type {
   EmployeeAssumptions,
   CostDept,
   CommissionAssumptions,
+  HubSpotSyncAssumptions,
 } from './types';
 import PricingGrid from './components/PricingGrid';
 import MonthlyGrid from './components/MonthlyGrid';
@@ -17,7 +18,10 @@ import YearlySummary from './components/YearlySummary';
 import EmployeeList from './components/EmployeeList';
 import EmployeeAssumptionsGrid from './components/EmployeeAssumptionsGrid';
 import CommissionGrid from './components/CommissionGrid';
+import StackedBarChart from './components/StackedBarChart';
+import Modal from './components/Modal';
 import { useUndoable } from './useUndoable';
+import { annualSummaryByType, contractValueHistory, quarterlyPivot, syncHubSpot } from './hubspot';
 import {
   ROW_TOOLTIPS,
   activeTypeCellTooltip,
@@ -49,7 +53,7 @@ const TYPE_LABEL: Record<TrialType, string> = {
   C: 'Type C (Large)',
 };
 
-type View = 'model' | 'total' | 'employees' | 'costs' | 'budget';
+type View = 'model' | 'total' | 'hubspot' | 'hubspot-deals' | 'employees' | 'costs' | 'budget';
 
 export default function App() {
   const {
@@ -64,6 +68,7 @@ export default function App() {
   } = useUndoable<ModelInput>(loadInitialInput());
   const [view, setView] = useState<View>('total');
   const [activeTA, setActiveTA] = useState<string>('Ophthalmology');
+  const [lastSyncMeta, setLastSyncMeta] = useState<import('./hubspot').SyncResult['meta'] | null>(null);
 
   const output = useMemo(() => computeModel(input), [input]);
 
@@ -110,6 +115,28 @@ export default function App() {
 
   const updateCommission = (next: CommissionAssumptions) =>
     setInput((prev) => ({ ...prev, commission: next }));
+
+  const updateHubSpotSync = (next: HubSpotSyncAssumptions) =>
+    setInput((prev) => ({ ...prev, hubspotSync: next }));
+
+  const runHubSpotSync = async () => {
+    const result = await syncHubSpot(
+      input.dates,
+      Object.keys(input.hubspot.lineItems),
+      input.hubspotSync,
+    );
+    setInput((prev) => ({ ...prev, hubspot: result.hubspot }));
+    setLastSyncMeta(result.meta);
+    const { meta } = result;
+    const parts = [
+      `Synced ${meta.dealsApplied}/${meta.dealsApplied + meta.dealsSkipped} deals`,
+      `(${meta.counts.sales} Sales + ${meta.counts.changeOrders} CO, ${meta.counts.lineItems} line items)`,
+    ];
+    if (meta.newLineItemNames.length) parts.push(`+${meta.newLineItemNames.length} new line items`);
+    if (meta.unknownStages.length) parts.push(`unknown stages: ${meta.unknownStages.join(', ')}`);
+    if (meta.unknownLineItemNames.length) parts.push(`unmapped: ${meta.unknownLineItemNames.length}`);
+    return parts.join(' · ');
+  };
 
   const updateCostLine = (dept: CostDept, lineName: string, monthIdx: number, value: number) => {
     setInput((prev) => {
@@ -189,7 +216,14 @@ export default function App() {
               ↷
             </button>
           </div>
-          <button onClick={reset} className="btn">Reset to Excel defaults</button>
+          <HeaderMenu
+            onReset={reset}
+            onDownload={async () => {
+              const { downloadModelAsExcel } = await import('./exportExcel');
+              await downloadModelAsExcel(input, output, lastSyncMeta?.deals);
+            }}
+            onSync={runHubSpotSync}
+          />
         </div>
       </header>
 
@@ -211,6 +245,29 @@ export default function App() {
         >
           Total Revenue
           <span className="view-tab-sub">${(grandTotal / 1e6).toFixed(1)}M with HubSpot</span>
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === 'hubspot'}
+          className={`view-tab ${view === 'hubspot' ? 'active' : ''}`}
+          onClick={() => setView('hubspot')}
+        >
+          HubSpot
+          <span className="view-tab-sub">
+            ${(hubspotTotal / 1e6).toFixed(1)}M pipeline
+            {lastSyncMeta ? ` · synced` : ' · not synced'}
+          </span>
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === 'hubspot-deals'}
+          className={`view-tab ${view === 'hubspot-deals' ? 'active' : ''}`}
+          onClick={() => setView('hubspot-deals')}
+        >
+          HubSpot Deals
+          <span className="view-tab-sub">
+            {lastSyncMeta ? `${lastSyncMeta.deals.length} deals` : 'sync to view'}
+          </span>
         </button>
         <button
           role="tab"
@@ -255,6 +312,16 @@ export default function App() {
         />
       ) : view === 'total' ? (
         <TotalView input={input} output={output} updateHubSpot={updateHubSpot} />
+      ) : view === 'hubspot' ? (
+        <HubSpotView
+          input={input}
+          hubspotTotal={hubspotTotal}
+          updateHubSpotSync={updateHubSpotSync}
+          onSync={runHubSpotSync}
+          lastSyncMeta={lastSyncMeta}
+        />
+      ) : view === 'hubspot-deals' ? (
+        <HubSpotDealsView lastSyncMeta={lastSyncMeta} onSync={runHubSpotSync} />
       ) : view === 'employees' ? (
         <EmployeesView
           input={input}
@@ -284,6 +351,651 @@ export default function App() {
         </p>
       </footer>
     </div>
+  );
+}
+
+interface HeaderMenuProps {
+  onReset: () => void;
+  onDownload: () => Promise<void> | void;
+  onSync: () => Promise<string>;
+}
+
+function HeaderMenu({ onReset, onDownload, onSync }: HeaderMenuProps) {
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    return () => window.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const handleUploadClick = () => {
+    setOpen(false);
+    fileRef.current?.click();
+  };
+
+  const handleReset = () => {
+    setOpen(false);
+    onReset();
+  };
+
+  const handleDownload = async () => {
+    setOpen(false);
+    setStatus('Building Excel…');
+    try {
+      await onDownload();
+      setStatus('Downloaded Excel');
+    } catch (err) {
+      setStatus(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setStatus(null), 4000);
+  };
+
+  const handleSync = async () => {
+    setOpen(false);
+    setStatus('Syncing from HubSpot…');
+    try {
+      const summary = await onSync();
+      setStatus(summary);
+    } catch (err) {
+      setStatus(`Sync failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setStatus(null), 8000);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setStatus(`Uploading ${file.name}…`);
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'x-filename': file.name, 'content-type': 'application/octet-stream' },
+        body: file,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setStatus(`Uploaded ${file.name}`);
+    } catch (err) {
+      setStatus(`Upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setStatus(null), 4000);
+  };
+
+  return (
+    <div className="menu-wrap" ref={wrapRef}>
+      {status && <span className="menu-status">{status}</span>}
+      <button
+        className="btn icon-btn"
+        aria-label="Menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        ☰
+      </button>
+      {open && (
+        <div className="menu-dropdown" role="menu">
+          <button role="menuitem" className="menu-item" onClick={handleSync}>
+            Sync from HubSpot
+          </button>
+          <button role="menuitem" className="menu-item" onClick={handleDownload}>
+            Download as Excel
+          </button>
+          <button role="menuitem" className="menu-item" onClick={handleUploadClick}>
+            Upload file…
+          </button>
+          <button role="menuitem" className="menu-item" onClick={handleReset}>
+            Reset to Excel defaults
+          </button>
+        </div>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+      />
+    </div>
+  );
+}
+
+interface HubSpotViewProps {
+  input: ModelInput;
+  hubspotTotal: number;
+  updateHubSpotSync: (next: HubSpotSyncAssumptions) => void;
+  onSync: () => Promise<string>;
+  lastSyncMeta: import('./hubspot').SyncResult['meta'] | null;
+}
+
+function HubSpotView({ input, hubspotTotal, updateHubSpotSync, onSync, lastSyncMeta }: HubSpotViewProps) {
+  const a = input.hubspotSync;
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      setSyncMsg(await onSync());
+    } catch (err) {
+      setSyncMsg(`Sync failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setSyncing(false);
+  };
+
+  const updateStage = (label: string, field: 'closeProbability' | 'remainingDays', value: number) => {
+    updateHubSpotSync({
+      ...a,
+      stages: { ...a.stages, [label]: { ...a.stages[label], [field]: value } },
+    });
+  };
+
+  const updateSchedule = (name: string, value: HubSpotSyncAssumptions['paymentSchedules'][string]) => {
+    updateHubSpotSync({ ...a, paymentSchedules: { ...a.paymentSchedules, [name]: value } });
+  };
+
+  return (
+    <>
+      <section>
+        <div className="ta-summary">
+          <span className="ta-name">HubSpot Sync</span>
+          <span className="ta-total">
+            Pipeline 6-yr total: ${Math.round(hubspotTotal).toLocaleString()}
+          </span>
+        </div>
+        <p className="hint">
+          Pulls deals from <code>Sales Pipeline [New]</code> + <code>Change Orders</code>, applies the
+          per-stage close probability and per-line-item payment schedule below, and replaces the
+          HubSpot section of the model. Edits here re-run only on next Sync.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+          <button className="btn" onClick={handleSync} disabled={syncing}>
+            {syncing ? 'Syncing…' : 'Sync from HubSpot'}
+          </button>
+          {syncMsg && <span className="hint" style={{ margin: 0 }}>{syncMsg}</span>}
+        </div>
+        {lastSyncMeta && (
+          <div className="hint" style={{ marginTop: 8 }}>
+            Last sync at {new Date(lastSyncMeta.fetchedAt).toLocaleString()} —{' '}
+            {lastSyncMeta.dealsApplied} applied · {lastSyncMeta.dealsSkipped} skipped (
+            {Object.entries(lastSyncMeta.skipReasons).map(([k, v]) => `${v} ${k}`).join(', ')})
+            {lastSyncMeta.newLineItemNames.length > 0 && (
+              <>
+                {' · '}new line items: {lastSyncMeta.newLineItemNames.join(', ')}
+              </>
+            )}
+            {lastSyncMeta.unknownStages.length > 0 && (
+              <>
+                {' · '}<strong>unknown stages</strong>: {lastSyncMeta.unknownStages.join(', ')}
+              </>
+            )}
+            {lastSyncMeta.unknownLineItemNames.length > 0 && (
+              <>
+                {' · '}<strong>unmapped line items</strong>: {lastSyncMeta.unknownLineItemNames.join(', ')}
+              </>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2>Annual summary by revenue type</h2>
+        <p className="hint">
+          High-level revenue type = line item name trimmed before the first "-" (so all "Bitfount License - …"
+          rows roll up to "Bitfount License"). Values are the synced pipeline above, totalled per calendar year.
+        </p>
+        {(() => {
+          const summary = annualSummaryByType(input.hubspot, input.dates);
+          return (
+            <table className="yearly-emp-table" style={{ maxWidth: 900 }}>
+              <thead>
+                <tr>
+                  <th>Revenue type</th>
+                  {summary.years.map((y) => <th key={y}>{y}</th>)}
+                  <th>6-yr Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.types.map((t) => {
+                  const rowTotal = summary.years.reduce((s, y) => s + (summary.data[t]?.[y] || 0), 0);
+                  return (
+                    <tr key={t}>
+                      <td>{t}</td>
+                      {summary.years.map((y) => <td key={y}>{money(summary.data[t]?.[y] || 0)}</td>)}
+                      <td className="bold">{money(rowTotal)}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="total-row">
+                  <td>TOTAL</td>
+                  {summary.years.map((y) => {
+                    const colTotal = summary.types.reduce((s, t) => s + (summary.data[t]?.[y] || 0), 0);
+                    return <td key={y}>{money(colTotal)}</td>;
+                  })}
+                  <td className="bold">
+                    {money(
+                      summary.types.reduce(
+                        (s, t) => s + summary.years.reduce((s2, y) => s2 + (summary.data[t]?.[y] || 0), 0),
+                        0,
+                      ),
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          );
+        })()}
+      </section>
+
+      <section>
+        <h2>Pipeline by line item × month <span className="hint">(synced state, editable in Total Revenue)</span></h2>
+        <p className="hint">
+          Monthly value of each HubSpot line item after applying the stage probability and payment
+          schedule. Sums to the pipeline total above.
+        </p>
+        {(() => {
+          const dates = input.dates;
+          const names = Object.keys(input.hubspot.lineItems).sort();
+          const rows: MonthlyRow[] = names.map((name) => ({
+            metric: name,
+            rowKey: `hs_${name}`,
+            values: input.hubspot.lineItems[name],
+          }));
+          rows.push({
+            metric: 'Total',
+            rowKey: 'hs_total',
+            isTotal: true,
+            values: input.hubspot.grandTotal,
+          });
+          return <MonthlyGrid dates={dates} rows={rows} height={28 + 30 * (rows.length + 1)} />;
+        })()}
+      </section>
+
+      <section>
+        <h2>Sync settings</h2>
+        <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', marginTop: 4 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="hint" style={{ margin: 0 }}>Close-date mode</span>
+            <select
+              className="btn"
+              value={a.closeDateMode}
+              onChange={(e) =>
+                updateHubSpotSync({ ...a, closeDateMode: e.target.value as 'predicted' | 'hubspot' })
+              }
+            >
+              <option value="predicted">Predicted (HubSpot date + remaining stage days)</option>
+              <option value="hubspot">HubSpot date (use raw closedate)</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="hint" style={{ margin: 0 }}>Default project duration (months)</span>
+            <input
+              className="btn"
+              type="number"
+              min={1}
+              value={a.defaultDurationMonths}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                if (!isNaN(v) && v > 0) updateHubSpotSync({ ...a, defaultDurationMonths: v });
+              }}
+              style={{ width: 120 }}
+            />
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Stage probability table</h2>
+        <p className="hint">
+          Close probability and estimated remaining days per stage. Used to weight deal value and to
+          shift the predicted close date forward from the HubSpot close date. Stages with 0% are
+          skipped entirely (Closed Lost).
+        </p>
+        <table className="yearly-emp-table" style={{ maxWidth: 640 }}>
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>Close probability</th>
+              <th>Remaining days</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.keys(a.stages).map((label) => {
+              const s = a.stages[label];
+              return (
+                <tr key={label}>
+                  <td>{label}</td>
+                  <td>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      max={1}
+                      value={s.closeProbability}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (!isNaN(v)) updateStage(label, 'closeProbability', v);
+                      }}
+                      style={{ width: 90, textAlign: 'right' }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min={0}
+                      value={s.remainingDays}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (!isNaN(v)) updateStage(label, 'remainingDays', v);
+                      }}
+                      style={{ width: 90, textAlign: 'right' }}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Payment schedule by line item</h2>
+        <p className="hint">
+          <strong>Annual</strong>: ⌈duration/12⌉ payments on close-date anniversary months ·
+          <strong> Uniform</strong>: spread evenly over `duration` months ·
+          <strong> Start</strong>: lump in close month ·
+          <strong> End</strong>: lump in close + duration month.
+        </p>
+        <table className="yearly-emp-table" style={{ maxWidth: 720 }}>
+          <thead>
+            <tr>
+              <th>Line item</th>
+              <th>Schedule</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.keys(a.paymentSchedules).sort().map((name) => (
+              <tr key={name}>
+                <td>{name}</td>
+                <td>
+                  <select
+                    value={a.paymentSchedules[name]}
+                    onChange={(e) =>
+                      updateSchedule(name, e.target.value as HubSpotSyncAssumptions['paymentSchedules'][string])
+                    }
+                  >
+                    <option value="Annual">Annual</option>
+                    <option value="Uniform">Uniform</option>
+                    <option value="Start">Start</option>
+                    <option value="End">End</option>
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </>
+  );
+}
+
+interface HubSpotDealsViewProps {
+  lastSyncMeta: import('./hubspot').SyncResult['meta'] | null;
+  onSync: () => Promise<string>;
+}
+
+function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
+  const [syncing, setSyncing] = useState(false);
+  const [sortKey, setSortKey] = useState<'name' | 'expected' | 'amount' | 'predicted' | 'prob' | 'stage'>('expected');
+  const [sortDesc, setSortDesc] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'applied' | 'skipped'>('all');
+  const [openModal, setOpenModal] = useState<null | 'current' | 'expected'>(null);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try { await onSync(); } catch { /* errors surfaced via menu status */ }
+    setSyncing(false);
+  };
+
+  if (!lastSyncMeta) {
+    return (
+      <section>
+        <div className="ta-summary">
+          <span className="ta-name">HubSpot Deals</span>
+        </div>
+        <p className="hint">No sync data yet. Click Sync to fetch deals from HubSpot.</p>
+        <button className="btn" onClick={handleSync} disabled={syncing}>
+          {syncing ? 'Syncing…' : 'Sync from HubSpot'}
+        </button>
+      </section>
+    );
+  }
+
+  const deals = lastSyncMeta.deals
+    .filter((d) => statusFilter === 'all' || d.status === statusFilter)
+    .slice()
+    .sort((a, b) => {
+      const dir = sortDesc ? -1 : 1;
+      switch (sortKey) {
+        case 'name': return a.name.localeCompare(b.name) * dir;
+        case 'expected': return (a.expectedAmount - b.expectedAmount) * dir;
+        case 'amount': return (a.amountReported - b.amountReported) * dir;
+        case 'predicted':
+          return ((a.closeDatePredicted ?? '') < (b.closeDatePredicted ?? '') ? -1 : 1) * dir;
+        case 'prob': return (a.closeProbability - b.closeProbability) * dir;
+        case 'stage': return a.stageLabel.localeCompare(b.stageLabel) * dir;
+      }
+    });
+
+  const totalExpected = deals.reduce((s, d) => s + d.expectedAmount, 0);
+  const totalAmount = deals.reduce((s, d) => s + d.amountReported, 0);
+
+  const headerSort = (key: typeof sortKey, label: string) => (
+    <th
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+      onClick={() => {
+        if (sortKey === key) setSortDesc(!sortDesc);
+        else { setSortKey(key); setSortDesc(true); }
+      }}
+    >
+      {label} {sortKey === key ? (sortDesc ? '↓' : '↑') : ''}
+    </th>
+  );
+
+  const history = contractValueHistory(lastSyncMeta.deals);
+  const maxHistCV = history.reduce((m, r) => Math.max(m, r.totalCV), 0);
+  const currentPipe = quarterlyPivot(lastSyncMeta.deals, { weighted: false, openOnly: true });
+  const expectedClose = quarterlyPivot(lastSyncMeta.deals, { weighted: true, openOnly: false });
+
+  const pivotTable = (p: typeof currentPipe) => (
+    <table className="yearly-emp-table">
+      <thead>
+        <tr>
+          <th>Quarter</th>
+          {p.types.map((t) => <th key={t}>{t}</th>)}
+          <th>Row total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {p.quarters.length === 0 && (
+          <tr><td colSpan={p.types.length + 2}><span className="hint">No deals.</span></td></tr>
+        )}
+        {p.quarters.map((q) => (
+          <tr key={q}>
+            <td>{q}</td>
+            {p.types.map((t) => <td key={t}>{money(p.data[q]?.[t] || 0)}</td>)}
+            <td className="bold">{money(p.rowTotals[q])}</td>
+          </tr>
+        ))}
+        {p.quarters.length > 0 && (
+          <tr className="total-row">
+            <td>TOTAL</td>
+            {p.types.map((t) => <td key={t}>{money(p.colTotals[t] || 0)}</td>)}
+            <td className="bold">{money(p.grandTotal)}</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+
+  return (
+    <>
+      <section>
+        <h2>Total contract value over time <span className="hint">(snapshot at start of each month)</span></h2>
+        <p className="hint">
+          A deal is counted as live if its create date is ≤ the month start and its HubSpot close date is &gt; the month
+          start. TCV = sum of (unit price × quantity) across the deal's line items.
+        </p>
+        <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+          <table className="yearly-emp-table" style={{ width: '100%' }}>
+            <thead>
+              <tr>
+                <th>Month start</th>
+                <th>Live deals</th>
+                <th>Total CV</th>
+                <th style={{ width: '50%' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((r) => (
+                <tr key={r.monthStart}>
+                  <td>{r.monthStart}</td>
+                  <td>{r.liveCount}</td>
+                  <td className="bold">{money(r.totalCV)}</td>
+                  <td>
+                    <div
+                      style={{
+                        height: 10,
+                        background: 'var(--accent)',
+                        width: maxHistCV ? `${(r.totalCV / maxHistCV) * 100}%` : '0%',
+                        borderRadius: 2,
+                      }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>
+              Current pipeline by close quarter × revenue type{' '}
+              <span className="hint">(open deals, raw amounts)</span>
+            </h2>
+            <p className="hint">
+              Sum of (unit price × quantity) across all open deals (stage not Closed Won/Lost), stacked by
+              high-level revenue type and bucketed by the deal's predicted close quarter.
+            </p>
+          </div>
+          <button className="btn" onClick={() => setOpenModal('current')}>Show raw data</button>
+        </div>
+        <StackedBarChart pivot={currentPipe} />
+      </section>
+
+      <section>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>
+              Estimated closed pipeline by close quarter × revenue type{' '}
+              <span className="hint">(all deals × close probability)</span>
+            </h2>
+            <p className="hint">
+              Each line item value is multiplied by the deal's close probability — Closed Won = 100%, Closed Lost
+              excluded (0%). Represents the forecast booking by quarter.
+            </p>
+          </div>
+          <button className="btn" onClick={() => setOpenModal('expected')}>Show raw data</button>
+        </div>
+        <StackedBarChart pivot={expectedClose} />
+      </section>
+
+      <Modal
+        open={openModal === 'current'}
+        onClose={() => setOpenModal(null)}
+        title="Current pipeline by close quarter × revenue type — raw data"
+      >
+        {pivotTable(currentPipe)}
+      </Modal>
+      <Modal
+        open={openModal === 'expected'}
+        onClose={() => setOpenModal(null)}
+        title="Estimated closed pipeline by close quarter × revenue type — raw data"
+      >
+        {pivotTable(expectedClose)}
+      </Modal>
+
+      <section>
+      <div className="ta-summary">
+        <span className="ta-name">HubSpot Deals</span>
+        <span className="ta-total">
+          {deals.length} deals · ${Math.round(totalAmount).toLocaleString()} total ·{' '}
+          ${Math.round(totalExpected).toLocaleString()} expected
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 12px' }}>
+        <button className="btn" onClick={handleSync} disabled={syncing}>
+          {syncing ? 'Syncing…' : 'Re-sync'}
+        </button>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span className="hint" style={{ margin: 0 }}>Show:</span>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
+            <option value="all">All ({lastSyncMeta.deals.length})</option>
+            <option value="applied">Applied ({lastSyncMeta.dealsApplied})</option>
+            <option value="skipped">Skipped ({lastSyncMeta.dealsSkipped})</option>
+          </select>
+        </label>
+        <span className="hint" style={{ margin: 0 }}>
+          Last sync: {new Date(lastSyncMeta.fetchedAt).toLocaleString()}
+        </span>
+      </div>
+      <table className="yearly-emp-table">
+        <thead>
+          <tr>
+            {headerSort('name', 'Deal')}
+            <th>Pipeline</th>
+            {headerSort('stage', 'Stage')}
+            {headerSort('amount', 'Amount')}
+            {headerSort('prob', 'Close prob')}
+            {headerSort('expected', 'Expected')}
+            <th>Close (HubSpot)</th>
+            {headerSort('predicted', 'Close (predicted)')}
+            <th>Duration</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deals.map((d) => (
+            <tr key={d.id}>
+              <td style={{ textAlign: 'left', maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.name}>{d.name}</td>
+              <td style={{ textAlign: 'left' }}>{d.pipelineLabel}</td>
+              <td style={{ textAlign: 'left' }}>{d.stageLabel}</td>
+              <td>{d.amountReported ? `$${Math.round(d.amountReported).toLocaleString()}` : ''}</td>
+              <td>{(d.closeProbability * 100).toFixed(1)}%</td>
+              <td className="bold">{d.expectedAmount ? `$${Math.round(d.expectedAmount).toLocaleString()}` : ''}</td>
+              <td>{d.closeDateHubSpot ?? ''}</td>
+              <td>{d.closeDatePredicted ?? ''}</td>
+              <td>{d.durationMonths}m</td>
+              <td className={d.status === 'applied' ? '' : 'neg'} title={d.skipReason ?? ''}>
+                {d.status === 'applied' ? 'Applied' : `Skipped (${d.skipReason ?? ''})`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </section>
+    </>
   );
 }
 

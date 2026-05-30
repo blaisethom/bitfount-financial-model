@@ -59,6 +59,25 @@ export interface CostsData {
   };
 }
 
+export type PaymentSchedule = 'Annual' | 'Uniform' | 'Start' | 'End';
+export type CloseDateMode = 'predicted' | 'hubspot';
+
+export interface HubSpotStageDef {
+  closeProbability: number;
+  remainingDays: number;
+}
+
+export interface HubSpotSyncAssumptions {
+  /** Stage label → close probability + remaining days to predicted close. */
+  stages: Record<string, HubSpotStageDef>;
+  /** Line item name → payment schedule. */
+  paymentSchedules: Record<string, PaymentSchedule>;
+  /** Default project duration when HubSpot deal has no duration set. */
+  defaultDurationMonths: number;
+  /** Which close-date to use: HubSpot raw, or predicted (close + remaining stage days). */
+  closeDateMode: CloseDateMode;
+}
+
 export interface CommissionAssumptions {
   /** Fraction of AI Model License revenue paid to the modeller as commission. */
   rate: number;
@@ -76,6 +95,7 @@ export interface ModelInput {
   pricing: Pricing;
   schedule: Schedule;
   hubspot: HubSpotData;
+  hubspotSync: HubSpotSyncAssumptions;
   employees: Employee[];
   employeeAssumptions: EmployeeAssumptions;
   costs: CostsData;
