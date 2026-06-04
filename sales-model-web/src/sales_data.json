@@ -2789,75 +2789,75 @@
   "expected_totals": {
     "Ophthalmology": {
       "platform": 45982500.0,
-      "project": 6760000,
-      "pm": 1990000,
+      "project": 6760000.0,
+      "pm": 1990000.0,
       "total": 54732500.0
     },
     "TA2": {
-      "platform": 37264270.833333336,
-      "project": 7467500,
-      "pm": 1945000,
-      "total": 46676770.833333336
+      "platform": 37264270.83,
+      "project": 7467500.0,
+      "pm": 1945000.0,
+      "total": 46676770.83
     },
     "TA3": {
       "platform": 25344687.5,
-      "project": 5637500,
-      "pm": 1438000,
+      "project": 5637500.0,
+      "pm": 1438000.0,
       "total": 32420187.5
     },
     "TA4": {
-      "platform": 23051458.333333332,
-      "project": 4590000,
-      "pm": 1124000,
-      "total": 28765458.333333332
+      "platform": 23051458.33,
+      "project": 4590000.0,
+      "pm": 1124000.0,
+      "total": 28765458.33
     },
     "TA5": {
-      "platform": 14526041.666666666,
-      "project": 2687500,
-      "pm": 703000,
-      "total": 17916541.666666664
+      "platform": 14526041.67,
+      "project": 2687500.0,
+      "pm": 703000.0,
+      "total": 17916541.67
     },
     "TA6": {
-      "platform": 0,
-      "project": 0,
-      "pm": 0,
-      "total": 0
+      "platform": 0.0,
+      "project": 0.0,
+      "pm": 0.0,
+      "total": 0.0
     },
     "TA7": {
-      "platform": 0,
-      "project": 0,
-      "pm": 0,
-      "total": 0
+      "platform": 0.0,
+      "project": 0.0,
+      "pm": 0.0,
+      "total": 0.0
     },
     "TA8": {
-      "platform": 0,
-      "project": 0,
-      "pm": 0,
-      "total": 0
+      "platform": 0.0,
+      "project": 0.0,
+      "pm": 0.0,
+      "total": 0.0
     },
     "TA9": {
-      "platform": 0,
-      "project": 0,
-      "pm": 0,
-      "total": 0
+      "platform": 0.0,
+      "project": 0.0,
+      "pm": 0.0,
+      "total": 0.0
     },
     "TA10": {
-      "platform": 0,
-      "project": 0,
-      "pm": 0,
-      "total": 0
+      "platform": 0.0,
+      "project": 0.0,
+      "pm": 0.0,
+      "total": 0.0
     },
     "TA11": {
-      "platform": 0,
-      "project": 0,
-      "pm": 0,
-      "total": 0
+      "platform": 0.0,
+      "project": 0.0,
+      "pm": 0.0,
+      "total": 0.0
     },
     "TA12": {
-      "platform": 0,
-      "project": 0,
-      "pm": 0,
-      "total": 0
+      "platform": 0.0,
+      "project": 0.0,
+      "pm": 0.0,
+      "total": 0.0
     }
   }
 }

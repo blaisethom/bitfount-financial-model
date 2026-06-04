@@ -11,6 +11,11 @@ const DEAL_PROPS = [
   'dealname', 'dealstage', 'pipeline', 'closedate', 'createdate', 'amount',
   'project_duration__months_', 'customer_type', 'cro_type', 'study_phase',
   'project_type', 'change_order_amount', 'has_change_order_',
+  // Candidate disease / TA properties — HubSpot returns the ones that exist
+  // and silently omits the rest. `resolveDealTA` currently uses deal name
+  // matching only; these are here so the UI shows them when present and we
+  // can wire them into the allocator later without another backend change.
+  'therapeutic_area', 'disease', 'indication', 'disease_area', 'study_indication',
 ]
 const LI_PROPS = ['name', 'price', 'quantity', 'amount']
 

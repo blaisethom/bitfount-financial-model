@@ -1,4 +1,6 @@
-import type { HubSpotData, HubSpotSyncAssumptions, CloseDateMode } from './types';
+import type {
+  HubSpotData, HubSpotSyncAssumptions, HubSpotTAAllocation, CloseDateMode,
+} from './types';
 
 // Stages where the predicted close date is just the actual close (no shift),
 // regardless of `closeDateMode`. These deals are already closed.
@@ -24,6 +26,11 @@ export interface PerDealSummary {
   name: string;
   pipelineLabel: string;
   stageLabel: string;
+  /** Therapeutic area this deal is allocated to. Resolved via
+   *  `HubSpotSyncAssumptions.taAllocation` — manual override > rule match
+   *  > default. Used to bucket the deal's pipeline value into per-TA
+   *  monthly arrays. */
+  therapeuticArea: string;
   /** Sum of (unit_price × quantity) across all line items. */
   amountReported: number;
   /** Per-high-level-type sum of (unit_price × quantity). Keys = highLevelType(li.name). */
@@ -50,6 +57,32 @@ export function highLevelType(name: string): string {
   const b = name.indexOf('-');
   const cut = a !== -1 ? a : b;
   return cut === -1 ? name.trim() : name.slice(0, cut).trim();
+}
+
+/** Resolve a deal to a TA using the configured allocation rules.
+ *  Order of precedence:
+ *    1. `perDeal[dealId]` override (set by manual user assignment)
+ *    2. First matching `rules[i].pattern` against the deal name (case-insensitive)
+ *    3. `defaultTA`
+ */
+export function resolveDealTA(
+  dealId: string,
+  dealName: string | null,
+  allocation: HubSpotTAAllocation,
+): string {
+  const override = allocation.perDeal[dealId];
+  if (override) return override;
+  if (dealName) {
+    for (const rule of allocation.rules) {
+      try {
+        const re = new RegExp(rule.pattern, 'i');
+        if (re.test(dealName)) return rule.ta;
+      } catch {
+        // Invalid regex — skip, fall through to next rule / default
+      }
+    }
+  }
+  return allocation.defaultTA;
 }
 
 export interface SyncResult {
@@ -95,6 +128,24 @@ export function transformDealsToHubSpotData(
   const lineItems: Record<string, number[]> = {};
   for (const name of allNames) lineItems[name] = new Array(months).fill(0);
 
+  // Per-(TA, line_item) monthly arrays. Same keys as `lineItems` but bucketed
+  // by the deal's resolved therapeutic area. TAs are created lazily as deals
+  // get allocated.
+  const byTALineItems: Record<string, Record<string, number[]>> = {};
+  const ensureTABucket = (ta: string, lineName: string): number[] => {
+    let byLine = byTALineItems[ta];
+    if (!byLine) {
+      byLine = {};
+      byTALineItems[ta] = byLine;
+    }
+    let arr = byLine[lineName];
+    if (!arr) {
+      arr = new Array(months).fill(0);
+      byLine[lineName] = arr;
+    }
+    return arr;
+  };
+
   const meta: SyncResult['meta'] = {
     fetchedAt: resp.fetchedAt,
     counts: resp.counts,
@@ -133,6 +184,12 @@ export function transformDealsToHubSpotData(
       ? Math.max(1, Math.round(parseFloat(durStr)))
       : assumptions.defaultDurationMonths;
 
+    const therapeuticArea = resolveDealTA(
+      deal.id,
+      deal.properties.dealname ?? null,
+      assumptions.taAllocation,
+    );
+
     const recordSummary = (
       status: 'applied' | 'skipped',
       closeProbability: number,
@@ -144,6 +201,7 @@ export function transformDealsToHubSpotData(
         name: deal.properties.dealname ?? `(deal ${deal.id})`,
         pipelineLabel,
         stageLabel: stageLabel ?? '(unknown stage)',
+        therapeuticArea,
         amountReported,
         amountByType,
         createDate: isoDate(createDate),
@@ -205,9 +263,14 @@ export function transformDealsToHubSpotData(
       if (totalValue === 0) continue;
 
       const arr = lineItems[name];
+      const taArr = ensureTABucket(therapeuticArea, name);
       const put = (year: number, month: number, v: number) => {
         const idx = monthIndex[ym(year, month)];
-        if (idx !== undefined) { arr[idx] += v; applied = true; }
+        if (idx !== undefined) {
+          arr[idx] += v;
+          taArr[idx] += v;
+          applied = true;
+        }
       };
 
       if (schedule === 'Annual') {
@@ -242,7 +305,7 @@ export function transformDealsToHubSpotData(
     for (let i = 0; i < months; i++) grandTotal[i] += lineItems[name][i];
   }
 
-  return { hubspot: { lineItems, grandTotal }, meta };
+  return { hubspot: { lineItems, byTALineItems, grandTotal }, meta };
 }
 
 // ─── Aggregation helpers used by UI and Excel export ───

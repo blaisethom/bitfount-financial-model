@@ -304,10 +304,30 @@ section h3 {
   max-width: 480px;
 }
 
+/* Wrap data tables to scroll horizontally when the viewport is narrower than
+   the table's natural width. Without this, narrow mobile screens squash 6-yr
+   summary tables into unreadable column widths. */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
 .yearly-emp-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+}
+
+.scroll-x > .yearly-emp-table {
+  /* Inside a scroll wrapper let columns size to content rather than squashing. */
+  width: auto;
+  min-width: 100%;
+}
+
+.scroll-x > .yearly-emp-table th,
+.scroll-x > .yearly-emp-table td {
+  white-space: nowrap;
 }
 
 .yearly-emp-table th,
@@ -394,4 +414,803 @@ section h3 {
   background: transparent !important;
   border: 0 !important;
   padding: 0 !important;
+}
+
+/* ─── Modal ───────────────────────────────────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-dialog {
+  background: #fff;
+  border-radius: 8px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+/* ─── EnginePreview ───────────────────────────────────────────────────── */
+
+/* Step explorer body — single column by default, sidebar + content when the
+   step list is open on a wide-enough viewport. `minmax(0, 1fr)` is critical:
+   without it the grid's implicit `min-width: auto` lets wide tables / JSON
+   dumps push the whole layout past the viewport. */
+.engine-step-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.engine-step-body.has-list {
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+}
+
+.engine-step-body > * {
+  min-width: 0;
+}
+
+/* Compact toolbar above the step body — current-step indicator on one side,
+   prev/next/browse-all on the other. Stacks vertically on phones. */
+.engine-step-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.engine-step-toolbar-current {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.engine-step-counter {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.engine-step-toolbar-io {
+  margin: 0;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.engine-step-nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.engine-sources-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.engine-sources-list > * {
+  min-width: 0;
+}
+
+.engine-source-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.engine-step-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Compact single-line list buttons. Each row is just the index + variable
+   name + small badges — no description preview, so the full list fits in a
+   scrollable sidebar. Title attribute carries the human-readable step name. */
+.engine-step-list-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 4px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.engine-step-list-btn:hover {
+  background: #f5f5f5;
+}
+
+.engine-step-list-btn.is-active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.engine-step-list-index {
+  color: var(--muted);
+  font-size: 10px;
+  flex-shrink: 0;
+  min-width: 22px;
+  text-align: right;
+}
+
+.engine-step-list-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.engine-kind-badge--compact {
+  font-size: 8px;
+  padding: 0 4px;
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+/* Scrollable wrapper around the list — bounded by viewport height and sticky
+   so it stays visible while the detail panel scrolls. */
+.engine-list-scroll {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 900px) {
+  /* On phones/tablets the list is below the detail (no sidebar). Cap its
+     height so it doesn't push the whole detail off-screen. */
+  .engine-list-scroll {
+    position: static;
+    max-height: 50vh;
+  }
+}
+
+.engine-step-detail {
+  min-width: 0;
+}
+
+.engine-step-detail-title {
+  margin: 0 0 4px;
+}
+
+.engine-step-detail-desc {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+/* Variable-name line directly under the detail-panel header. */
+.engine-step-detail-varname {
+  margin: 0 0 6px;
+}
+
+.engine-step-detail-varname > .engine-ref {
+  font-size: 12px;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+/* The toolbar's current-item label switches to monospace because it shows the
+   variable-name ref (the human "step.name" is the smaller subtitle below). */
+.engine-step-toolbar-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-word;
+}
+
+.engine-section-label {
+  margin: 12px 0 4px;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.engine-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  color: var(--text);
+}
+
+/* Pretty-printed operation body — code-style, wraps long lines, scrolls if
+   really wide. */
+.engine-formula {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 12px;
+}
+
+.engine-formula-head {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.engine-formula-body {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Input table is collapsed by default — output is the headline. */
+.engine-input-collapse {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+
+.engine-input-collapse > summary {
+  cursor: pointer;
+  list-style: revert;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.engine-input-collapse > summary > .engine-section-label {
+  display: inline;
+  margin: 0;
+}
+
+.engine-input-collapse[open] > summary {
+  margin-bottom: 6px;
+}
+
+/* "Headline output" badge — marks steps whose output is declared in
+   model.outputs (the curated list renderers consume). */
+.engine-headline-badge {
+  display: inline-block;
+  color: #b45309;
+  font-size: 10px;
+  margin-left: 6px;
+  vertical-align: baseline;
+}
+
+.engine-headline-badge.headline-inline,
+.engine-kind-badge.headline-inline {
+  background: #fffbea;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Source-kind badge ("literal" / "manual" / "api" / "sequence") next to a
+   source name in the node list. */
+.engine-kind-badge {
+  display: inline-block;
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  padding: 0 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+/* Section-grouped node list. Each group is a <details> that can collapse. */
+.engine-grouped-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.engine-group {
+  border-bottom: 1px solid var(--border);
+  background: #fafafa;
+}
+
+.engine-group:last-child {
+  border-bottom: 0;
+}
+
+.engine-group[open] {
+  background: #fff;
+}
+
+.engine-group-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text);
+  background: #f3f4f6;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.engine-group-name {
+  flex: 1;
+}
+
+.engine-group-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+  background: #f3f4f6;
+  border-radius: 10px;
+  padding: 1px 8px;
+}
+
+.engine-group-desc {
+  margin: 0;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  background: #fafafa;
+}
+
+.engine-grouped-list {
+  display: block;
+  gap: 0;
+}
+
+/* Schema list on the source detail panel. */
+.engine-schema-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Inline button style for refs — used by Input header and column references. */
+.engine-ref-button {
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.engine-ref-button:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Multi-input collapse — each input (primary, plus join.right / union members)
+   gets its own row with a clickable ref and a small preview underneath. */
+.engine-inputs-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.engine-input-item {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  background: #fafafa;
+}
+
+.engine-input-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+/* Per-input collapse: summary shows the ref + meta on one row, table preview
+   lives inside the body and is hidden until the user opens the details. */
+.engine-input-item-summary {
+  cursor: pointer;
+  list-style: revert;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.engine-input-item-details[open] > .engine-input-item-summary {
+  margin-bottom: 6px;
+}
+
+.engine-input-item-meta {
+  margin-left: auto;
+  font-size: 10px;
+}
+
+/* Above each pivoted table — tells the reader which column was spread across
+   the x-axis and which numeric column(s) populate the cells. */
+.engine-pivot-axes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 4px 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.engine-pivot-axes-label {
+  font-weight: 600;
+}
+
+.engine-pivot-axes-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--text);
+}
+
+/* "Used by" downstream-step list. */
+.engine-usage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.engine-usage-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  padding: 6px 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.engine-usage-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.engine-usage-name {
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+
+.engine-usage-ref {
+  flex-shrink: 0;
+}
+
+/* Column reference button inside the formula display. */
+.engine-col-ref {
+  background: transparent;
+  border: 0;
+  padding: 0 1px;
+  margin: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  border-bottom: 1px dotted var(--accent);
+  border-radius: 0;
+}
+
+.engine-col-ref:hover {
+  background: var(--accent-light);
+}
+
+.engine-col-ref.is-disabled,
+.engine-col-ref:disabled {
+  color: var(--text);
+  border-bottom-style: none;
+  cursor: default;
+}
+
+.engine-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Bounded variant — used for inline previews (e.g. input tables in the step
+   detail) where the user wants to scroll through rows without opening the
+   modal. The "view full" link below is the explicit escape hatch. */
+.engine-table-scroll--bounded {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  scrollbar-width: thin;
+}
+
+.engine-table-scroll--bounded thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.engine-view-full {
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.engine-view-full:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+@media (max-width: 600px) {
+  .engine-table-scroll--bounded {
+    max-height: 220px;
+  }
+}
+
+/* Pivot table: months across the x-axis, key columns sticky on the left so
+   they stay visible while you scroll through 72 months. */
+.engine-pivot-table th.engine-pivot-month,
+.engine-pivot-table td.engine-pivot-month {
+  min-width: 72px;
+  white-space: nowrap;
+}
+
+.engine-pivot-table th.engine-pivot-key,
+.engine-pivot-table td.engine-pivot-key {
+  position: sticky;
+  left: 0;
+  background: #fff;
+  z-index: 1;
+  white-space: nowrap;
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.engine-pivot-table thead th.engine-pivot-key {
+  background: #f5f5f5;
+  z-index: 2;
+}
+
+/* The metric column appears between key columns and axis columns when the
+   pivot is rendering multiple value columns (one row per metric). */
+.engine-pivot-table .engine-pivot-metric-col {
+  font-size: 11px;
+}
+
+.engine-pivot-table tbody td.engine-pivot-metric-col code {
+  background: #eef2ff;
+  color: #4338ca;
+  padding: 1px 6px;
+}
+
+/* ─── Tablet ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .app {
+    padding: 12px 14px 48px;
+  }
+
+  .app-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .header-stats {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+
+  /* Make the row of view tabs scroll instead of wrap weirdly. */
+  .view-tabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .view-tab {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .engine-step-body.has-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Phone ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  html,
+  body,
+  #root {
+    font-size: 13px;
+  }
+
+  .app {
+    padding: 8px 10px 40px;
+  }
+
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding-bottom: 8px;
+  }
+
+  .app-header h1 {
+    font-size: 18px;
+  }
+
+  .header-stats {
+    justify-content: space-between;
+  }
+
+  .stat {
+    text-align: left;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .stat-value {
+    font-size: 16px;
+  }
+
+  .stat-sub {
+    font-size: 10px;
+  }
+
+  section {
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+
+  section h2 {
+    font-size: 14px;
+  }
+
+  .ta-summary {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+
+  /* Larger touch targets for primary buttons. */
+  .btn {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .icon-btn {
+    width: 38px;
+    padding: 8px 0;
+  }
+
+  .menu-dropdown {
+    right: auto;
+    left: 0;
+    min-width: 180px;
+  }
+
+  .view-tab {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .view-tab-sub {
+    font-size: 10px;
+  }
+
+  /* Modal: shrink padding so dialog content has room on a phone. */
+  .modal-backdrop {
+    padding: 8px;
+  }
+
+  .modal-dialog {
+    padding: 12px;
+    max-height: 94vh;
+  }
+
+  .modal-header h2 {
+    font-size: 14px;
+  }
+
+  .yearly-emp-table {
+    font-size: 12px;
+  }
+
+  .yearly-emp-table th,
+  .yearly-emp-table td {
+    padding: 4px 6px;
+  }
+
+  .app-footer {
+    font-size: 11px;
+  }
+
+  /* Step explorer toolbar: stack current-step info above the nav row, and
+     spread the Prev / Next / Browse buttons across the row. */
+  .engine-step-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .engine-step-nav {
+    justify-content: space-between;
+  }
+
+  .engine-step-nav .btn {
+    flex: 1 1 auto;
+  }
 }

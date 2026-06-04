@@ -23,6 +23,9 @@ export function evaluateModel(model: ModelDef, opts: EvalOptions = {}): EvalResu
       tables[name] = { schema: src.schema, rows: src.rows.slice() };
     } else if (src.kind === 'manual') {
       tables[name] = { schema: src.schema, rows: src.defaults.slice() };
+    } else if (src.kind === 'sequence') {
+      const rows: Row[] = Array.from({ length: src.count }, (_, i) => ({ [src.column]: i }));
+      tables[name] = { schema: src.schema, rows };
     } else {
       throw new Error(`Source "${name}" is kind "${src.kind}" — pass prefetched data via opts.prefetchedSources.`);
     }
@@ -62,7 +65,42 @@ function applyOp(input: Table, op: TableOp, all: Record<string, Table>, stepId: 
     }
     case 'sort': return sortOp(input, op.by);
     case 'limit': return { schema: input.schema, rows: input.rows.slice(0, op.n) };
+    case 'window': return windowOp(input, op);
   }
+}
+
+function windowOp(t: Table, op: Extract<TableOp, { op: 'window' }>): Table {
+  const newColDefs: Column[] = Object.keys(op.derive).map((name) => ({ name, type: 'number' }));
+  const schema: TableSchema = { columns: [...t.schema.columns, ...newColDefs] };
+
+  // Group rows into partitions tracking their original index so we can write
+  // results back in the same order as the input.
+  const partitions = new Map<string, Array<{ row: Row; idx: number }>>();
+  t.rows.forEach((r, idx) => {
+    const key = op.partitionBy.map((k) => String(r[k] ?? '')).join('\x1f');
+    if (!partitions.has(key)) partitions.set(key, []);
+    partitions.get(key)!.push({ row: r, idx });
+  });
+
+  const out: Row[] = new Array(t.rows.length);
+  for (const partition of partitions.values()) {
+    partition.sort((a, b) => Number(a.row[op.orderBy] ?? 0) - Number(b.row[op.orderBy] ?? 0));
+    for (const { row, idx } of partition) {
+      const cur = Number(row[op.orderBy] ?? 0);
+      const lo = cur - op.range.preceding;
+      const hi = cur + op.range.following;
+      const window = partition
+        .filter(({ row: r }) => {
+          const v = Number(r[op.orderBy] ?? 0);
+          return v >= lo && v <= hi;
+        })
+        .map(({ row: r }) => r);
+      const next: Row = { ...row };
+      for (const [name, agg] of Object.entries(op.derive)) next[name] = aggregate(window, agg);
+      out[idx] = next;
+    }
+  }
+  return { schema, rows: out };
 }
 
 function selectOp(t: Table, cols: string[]): Table {
@@ -126,10 +164,11 @@ function groupByOp(t: Table, keys: string[], aggs: Record<string, AggExpr>): Tab
     buckets.get(key)!.push(r);
   }
   const rows: Row[] = [];
-  for (const [keyStr, group] of buckets) {
-    const keyValues = keyStr.split('\x1f');
+  for (const group of buckets.values()) {
+    const sample = group[0];
     const row: Row = {};
-    keys.forEach((k, i) => (row[k] = keyValues[i]));
+    // Preserve original key value types by reading from a sample row, not from the stringified bucket key.
+    for (const k of keys) row[k] = sample[k];
     for (const [outName, agg] of Object.entries(aggs)) row[outName] = aggregate(group, agg);
     rows.push(row);
   }
@@ -156,7 +195,22 @@ function aggregate(group: Row[], agg: AggExpr): CellValue {
   }
 }
 
-function joinOp(left: Table, right: Table, on: Array<{ left: string; right: string }>, type: 'inner' | 'left'): Table {
+function joinOp(left: Table, right: Table, on: Array<{ left: string; right: string }>, type: 'inner' | 'left' | 'cross'): Table {
+  const rightColsKept = right.schema.columns.filter((c) => !on.find((j) => j.right === c.name));
+  const schema: TableSchema = { columns: [...left.schema.columns, ...rightColsKept] };
+
+  if (type === 'cross' || on.length === 0) {
+    const rows: Row[] = [];
+    for (const lr of left.rows) {
+      for (const rr of right.rows) {
+        const out: Row = { ...lr };
+        for (const col of rightColsKept) out[col.name] = rr[col.name];
+        rows.push(out);
+      }
+    }
+    return { schema, rows };
+  }
+
   const rightIdx = new Map<string, Row[]>();
   for (const r of right.rows) {
     const key = on.map((j) => String(r[j.right] ?? '')).join('\x1f');
@@ -170,23 +224,18 @@ function joinOp(left: Table, right: Table, on: Array<{ left: string; right: stri
     if (matches.length === 0) {
       if (type === 'left') {
         const out: Row = { ...lr };
-        for (const col of right.schema.columns) {
-          if (!on.find((j) => j.right === col.name)) out[col.name] = null;
-        }
+        for (const col of rightColsKept) out[col.name] = null;
         rows.push(out);
       }
       continue;
     }
     for (const rr of matches) {
       const out: Row = { ...lr };
-      for (const col of right.schema.columns) {
-        if (!on.find((j) => j.right === col.name)) out[col.name] = rr[col.name];
-      }
+      for (const col of rightColsKept) out[col.name] = rr[col.name];
       rows.push(out);
     }
   }
-  const rightCols = right.schema.columns.filter((c) => !on.find((j) => j.right === c.name));
-  return { schema: { columns: [...left.schema.columns, ...rightCols] }, rows };
+  return { schema, rows };
 }
 
 function unionOp(tables: Table[]): Table {
@@ -270,10 +319,67 @@ export function evalExpr(expr: Expr, row: Row): CellValue {
           for (const v of args) if (v != null) return v;
           return null;
         }
+        case 'pow': {
+          if (typeof args[0] !== 'number' || typeof args[1] !== 'number') return null;
+          return Math.pow(args[0], args[1]);
+        }
+        case 'year': return parseDatePart(args[0], 0, 4);
+        case 'month': return parseDatePart(args[0], 5, 2);
+        case 'day': return parseDatePart(args[0], 8, 2);
+        case 'left': {
+          const s = args[0] == null ? null : String(args[0]);
+          const n = typeof args[1] === 'number' ? args[1] : 0;
+          return s == null ? null : s.slice(0, Math.max(0, Math.floor(n)));
+        }
+        case 'right': {
+          const s = args[0] == null ? null : String(args[0]);
+          const n = typeof args[1] === 'number' ? args[1] : 0;
+          if (s == null) return null;
+          const m = Math.max(0, Math.floor(n));
+          return m === 0 ? '' : s.slice(-m);
+        }
+        case 'mid': {
+          const s = args[0] == null ? null : String(args[0]);
+          const start = typeof args[1] === 'number' ? Math.max(1, Math.floor(args[1])) : 1;
+          const len = typeof args[2] === 'number' ? Math.max(0, Math.floor(args[2])) : 0;
+          return s == null ? null : s.slice(start - 1, start - 1 + len);
+        }
+        case 'len': return args[0] == null ? 0 : String(args[0]).length;
+        case 'upper': return args[0] == null ? null : String(args[0]).toUpperCase();
+        case 'lower': return args[0] == null ? null : String(args[0]).toLowerCase();
+        case 'trim': return args[0] == null ? null : String(args[0]).trim();
+        case 'int': return typeof args[0] === 'number' ? Math.floor(args[0]) : null;
+        case 'floor': return typeof args[0] === 'number' ? Math.floor(args[0]) : null;
+        case 'ceiling': return typeof args[0] === 'number' ? Math.ceil(args[0]) : null;
+        case 'sqrt': return typeof args[0] === 'number' && args[0] >= 0 ? Math.sqrt(args[0]) : null;
+        case 'mod': {
+          if (typeof args[0] !== 'number' || typeof args[1] !== 'number') return null;
+          if (args[1] === 0) return null;
+          // Excel MOD matches the sign of the divisor — use a mathematical modulo, not JS %.
+          return ((args[0] % args[1]) + args[1]) % args[1];
+        }
+        case 'isblank': return args[0] == null || args[0] === '';
+        case 'value': {
+          const v = args[0];
+          if (typeof v === 'number') return v;
+          if (typeof v === 'string') {
+            const n = parseFloat(v);
+            return Number.isFinite(n) ? n : null;
+          }
+          return null;
+        }
       }
       return null;
     }
   }
+}
+
+function parseDatePart(v: CellValue, offset: number, len: number): CellValue {
+  if (typeof v !== 'string') return null;
+  const slice = v.slice(offset, offset + len);
+  if (slice.length !== len) return null;
+  const n = parseInt(slice, 10);
+  return Number.isFinite(n) ? n : null;
 }
 
 function numOp(l: CellValue, r: CellValue, fn: (a: number, b: number) => number | null): CellValue {

@@ -58,6 +58,16 @@ export type SourceDef =
       description?: string;
       schema: TableSchema;
       defaults: Row[];
+    }
+  | {
+      /** Generated row sequence — produces `count` rows with a single
+       *  zero-indexed integer column named `column`. Useful as a calendar /
+       *  iteration dimension that downstream steps derive values from. */
+      kind: 'sequence';
+      description?: string;
+      column: string;
+      count: number;
+      schema: TableSchema;
     };
 
 // ─── Expressions (per-row, cell-level) ───────────────────────────────────
@@ -67,7 +77,17 @@ export type BinaryOp =
   | '=' | '!=' | '<' | '<=' | '>' | '>='
   | 'and' | 'or';
 
-export type FunctionName = 'min' | 'max' | 'if' | 'abs' | 'round' | 'concat' | 'coalesce';
+export type FunctionName =
+  // Existing
+  | 'min' | 'max' | 'if' | 'abs' | 'round' | 'concat' | 'coalesce' | 'pow'
+  // Dates — operate on YYYY-MM[-DD] strings, parse digits directly.
+  | 'year' | 'month' | 'day'
+  // Strings
+  | 'left' | 'right' | 'mid' | 'len' | 'upper' | 'lower' | 'trim'
+  // Math
+  | 'int' | 'floor' | 'ceiling' | 'sqrt' | 'mod'
+  // Logical / coercion
+  | 'isblank' | 'value';
 
 export type Expr =
   | { node: 'col'; name: string }
@@ -95,10 +115,20 @@ export type TableOp =
   /** Add or replace columns using per-row expressions. */
   | { op: 'map'; columns: Record<string, Expr> }
   | { op: 'groupBy'; keys: string[]; aggs: Record<string, AggExpr> }
-  | { op: 'join'; right: TableRef; on: Array<{ left: string; right: string }>; type: 'inner' | 'left' }
+  | { op: 'join'; right: TableRef; on: Array<{ left: string; right: string }>; type: 'inner' | 'left' | 'cross' }
   | { op: 'union'; tables: TableRef[] }
   | { op: 'sort'; by: Array<{ column: string; desc?: boolean }> }
-  | { op: 'limit'; n: number };
+  | { op: 'limit'; n: number }
+  /** Per-partition window aggregation. For each row r, derive columns by
+   *  aggregating rows in the same `partitionBy` group with `orderBy`
+   *  values in [r.orderBy - preceding, r.orderBy + following]. */
+  | {
+      op: 'window';
+      partitionBy: string[];
+      orderBy: string;
+      range: { preceding: number; following: number };
+      derive: Record<string, AggExpr>;
+    };
 
 // ─── Steps ───────────────────────────────────────────────────────────────
 
@@ -120,12 +150,39 @@ export interface ModelOutputDef {
   render?: 'table' | 'chart';
 }
 
+// ─── Groups ──────────────────────────────────────────────────────────────
+
+/**
+ * Optional logical grouping of sources / step outputs. Lets renderers organise
+ * the explorer (and downstream UIs) into sections — e.g. matching the tabs of
+ * the source spreadsheet. Each `refs` entry can be a source name or a step
+ * output ref.
+ */
+export interface ModelGroup {
+  name: string;
+  description?: string;
+  refs: TableRef[];
+}
+
 // ─── Model ───────────────────────────────────────────────────────────────
 
 export interface ModelDef {
   sources: Record<string, SourceDef>;
   steps: Step[];
   outputs: ModelOutputDef[];
+  groups?: ModelGroup[];
+  /**
+   * Column name to use as the pivot x-axis for any output that contains it.
+   * When set, renderers should lay tables out with this column's distinct
+   * values across columns; row keys are every non-axis non-numeric column,
+   * value cells come from every other numeric column. For our sales model
+   * this is `'month_idx'` so every monthly table pivots into a calendar
+   * grid automatically.
+   *
+   * Explicit instead of inferred: if you want a table NOT to pivot, don't
+   * include the axis column in its schema (or don't set this field).
+   */
+  defaultAxis?: string;
 }
 
 /** Result of evaluating a model. */

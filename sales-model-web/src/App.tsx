@@ -2,60 +2,75 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
 import './App.css';
-import { computeModel } from './model';
 import { loadInitialInput } from './data';
-import type {
-  ModelInput,
-  TrialType,
-  EmployeeAssumptions,
-  CostDept,
-  CommissionAssumptions,
-  HubSpotSyncAssumptions,
-} from './types';
-import PricingGrid from './components/PricingGrid';
-import MonthlyGrid from './components/MonthlyGrid';
-import YearlySummary from './components/YearlySummary';
-import EmployeeList from './components/EmployeeList';
-import EmployeeAssumptionsGrid from './components/EmployeeAssumptionsGrid';
-import CommissionGrid from './components/CommissionGrid';
-import StackedBarChart from './components/StackedBarChart';
+import type { ModelInput, HubSpotSyncAssumptions } from './types';
 import Modal from './components/Modal';
 import EnginePreview from './components/EnginePreview';
-import { exampleModel } from './models/example';
+import StackedBarChart from './components/StackedBarChart';
+import { salesModel } from './models/salesModel';
+import { evaluateSalesModel } from './models/evaluateSalesModel';
+import EngineSection from './report/EngineSection';
+import { applyEditToInput } from './report/applyEdit';
+import { engineSummary } from './report/summary';
+import { salesReport } from './report/salesReport';
 import { useUndoable } from './useUndoable';
 import { annualSummaryByType, contractValueHistory, quarterlyPivot, syncHubSpot } from './hubspot';
-import {
-  ROW_TOOLTIPS,
-  activeTypeCellTooltip,
-  activeTotalCellTooltip,
-  platformCellTooltip,
-  projectCellTooltip,
-  pmCellTooltip,
-  totalRevCellTooltip,
-  HUBSPOT_ROW_TOOLTIP,
-  TA_TOTAL_ROW_TOOLTIP,
-  GRAND_TOTAL_ROW_TOOLTIP,
-  hubspotLineCellTooltip,
-  hubspotSubtotalCellTooltip,
-  taTotalCellTooltip,
-  modeledSubtotalCellTooltip,
-  grandTotalCellTooltip,
-  EMPLOYEE_DEPT_ROW_TOOLTIP,
-  EMPLOYEE_TOTAL_ROW_TOOLTIP,
-  employeeDeptCellTooltip,
-  employeeTotalCellTooltip,
-} from './tooltips';
-import type { MonthlyRow } from './components/MonthlyGrid';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-const TYPE_LABEL: Record<TrialType, string> = {
-  A: 'Type A (Small)',
-  B: 'Type B (Medium)',
-  C: 'Type C (Large)',
-};
+type View = 'model' | 'total' | 'hubspot' | 'hubspot-deals' | 'employees' | 'costs' | 'budget' | 'balance-sheet' | 'engine';
 
-type View = 'model' | 'total' | 'hubspot' | 'hubspot-deals' | 'employees' | 'costs' | 'budget' | 'engine';
+const ALL_VIEWS: View[] = ['model', 'total', 'hubspot', 'hubspot-deals', 'employees', 'costs', 'budget', 'balance-sheet', 'engine'];
+const DEFAULT_VIEW: View = 'total';
+
+interface Route {
+  view: View;
+  /** Sub-location inside the view. Currently only used for `engine`, where it
+   *  names the source/step ref the user is looking at. */
+  ref?: string;
+}
+
+function parseRoute(hash: string): Route {
+  const raw = hash.replace(/^#/, '');
+  if (!raw) return { view: DEFAULT_VIEW };
+  const slash = raw.indexOf('/');
+  const head = slash >= 0 ? raw.slice(0, slash) : raw;
+  const tail = slash >= 0 ? raw.slice(slash + 1) : '';
+  if (!(ALL_VIEWS as string[]).includes(head)) return { view: DEFAULT_VIEW };
+  const ref = tail ? decodeURIComponent(tail) : undefined;
+  return { view: head as View, ref };
+}
+
+function formatRoute(route: Route): string {
+  return route.ref ? `#${route.view}/${encodeURIComponent(route.ref)}` : `#${route.view}`;
+}
+
+/** Two-way binding between component state and `location.hash`. Pushing a new
+ *  route goes through `history.pushState`, so the browser Back/Forward buttons
+ *  replay prior selections. Also listens for `popstate` (back/forward) and
+ *  `hashchange` (manual URL edits) to keep state in sync. */
+function useHashRoute(): [Route, (next: Route) => void] {
+  const [route, setRoute] = useState<Route>(() =>
+    typeof window === 'undefined' ? { view: DEFAULT_VIEW } : parseRoute(window.location.hash),
+  );
+  useEffect(() => {
+    const sync = () => setRoute(parseRoute(window.location.hash));
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
+  }, []);
+  const navigate = (next: Route) => {
+    const hash = formatRoute(next);
+    if (hash !== window.location.hash) {
+      window.history.pushState(null, '', hash);
+    }
+    setRoute(next);
+  };
+  return [route, navigate];
+}
 
 export default function App() {
   const {
@@ -68,55 +83,16 @@ export default function App() {
     canRedo,
     historyDepth,
   } = useUndoable<ModelInput>(loadInitialInput());
-  const [view, setView] = useState<View>('total');
-  const [activeTA, setActiveTA] = useState<string>('Ophthalmology');
+  const [route, navigate] = useHashRoute();
+  const view = route.view;
+  const setView = (v: View) => navigate({ view: v });
+  const setEngineRef = (ref: string) => navigate({ view: 'engine', ref });
   const [lastSyncMeta, setLastSyncMeta] = useState<import('./hubspot').SyncResult['meta'] | null>(null);
 
-  const output = useMemo(() => computeModel(input), [input]);
-
-  const updatePricing = (next: ModelInput['pricing']) =>
-    setInput((prev) => ({ ...prev, pricing: next }));
-
-  const updateStart = (rowKey: string, monthIdx: number, value: number) => {
-    const t = rowKey as TrialType;
-    setInput((prev) => {
-      const next = { ...prev, schedule: { ...prev.schedule } };
-      const cur = prev.schedule[activeTA];
-      const updated = { A: [...cur.A], B: [...cur.B], C: [...cur.C] };
-      updated[t][monthIdx] = value;
-      next.schedule[activeTA] = updated;
-      return next;
-    });
-  };
-
-  const updateEmployee = (
-    id: string,
-    field: 'salary' | 'startDate' | 'department' | 'position',
-    value: string | number,
-  ) => {
-    setInput((prev) => {
-      const idx = prev.employees.findIndex((e) => e.id === id);
-      if (idx < 0) return prev;
-      const employees = [...prev.employees];
-      const cur = employees[idx];
-      if (field === 'salary') {
-        const v = typeof value === 'string' ? parseFloat(value) : value;
-        if (Number.isNaN(v)) return prev;
-        employees[idx] = { ...cur, salary: v };
-      } else if (field === 'startDate') {
-        employees[idx] = { ...cur, startDate: String(value) };
-      } else {
-        employees[idx] = { ...cur, [field]: String(value) };
-      }
-      return { ...prev, employees };
-    });
-  };
-
-  const updateEmployeeAssumptions = (next: EmployeeAssumptions) =>
-    setInput((prev) => ({ ...prev, employeeAssumptions: next }));
-
-  const updateCommission = (next: CommissionAssumptions) =>
-    setInput((prev) => ({ ...prev, commission: next }));
+  const engineResult = useMemo(() => evaluateSalesModel(input), [input]);
+  const summary = useMemo(() => engineSummary(engineResult), [engineResult]);
+  const handleReportEdit = (edit: Parameters<typeof applyEditToInput>[1]) =>
+    setInput((prev) => applyEditToInput(prev, edit));
 
   const updateHubSpotSync = (next: HubSpotSyncAssumptions) =>
     setInput((prev) => ({ ...prev, hubspotSync: next }));
@@ -140,51 +116,9 @@ export default function App() {
     return parts.join(' · ');
   };
 
-  const updateCostLine = (dept: CostDept, lineName: string, monthIdx: number, value: number) => {
-    setInput((prev) => {
-      const items = prev.costs.lineItems[dept];
-      if (!items?.[lineName]) return prev;
-      const updated = [...items[lineName]];
-      updated[monthIdx] = value;
-      return {
-        ...prev,
-        costs: {
-          ...prev.costs,
-          lineItems: {
-            ...prev.costs.lineItems,
-            [dept]: { ...items, [lineName]: updated },
-          },
-        },
-      };
-    });
-  };
-
-  const updateHubSpot = (rowKey: string, monthIdx: number, value: number) => {
-    if (!rowKey.startsWith('hs_')) return;
-    const lineName = rowKey.slice(3);
-    setInput((prev) => {
-      if (!prev.hubspot.lineItems[lineName]) return prev;
-      const lineItems = { ...prev.hubspot.lineItems };
-      lineItems[lineName] = [...lineItems[lineName]];
-      lineItems[lineName][monthIdx] = value;
-      const grandTotal = new Array(prev.dates.length).fill(0);
-      for (const vs of Object.values(lineItems)) {
-        for (let i = 0; i < grandTotal.length; i++) grandTotal[i] += vs[i];
-      }
-      return { ...prev, hubspot: { lineItems, grandTotal } };
-    });
-  };
-
   const reset = () => setReset(loadInitialInput());
 
-  const ta = output.perTA[activeTA];
-  const taTotal6y = ta.total.reduce((a, b) => a + b, 0);
-  const modeledTotal = output.totals.total.reduce((a, b) => a + b, 0);
-  const hubspotTotal = input.hubspot.grandTotal.reduce((a, b) => a + b, 0);
-  const grandTotal = modeledTotal + hubspotTotal;
-  const employeeTotal = output.employees.total.reduce((a, b) => a + b, 0);
-  const opexTotal = output.budget.totalOpex.reduce((a, b) => a + b, 0);
-  const ebitdaTotal = output.budget.ebitda.reduce((a, b) => a + b, 0);
+  const { modeledTotal, hubspotTotal, grandTotal, employeeTotal, opexTotal, ebitdaTotal } = summary;
 
   return (
     <div className="app">
@@ -221,8 +155,8 @@ export default function App() {
           <HeaderMenu
             onReset={reset}
             onDownload={async () => {
-              const { downloadModelAsExcel } = await import('./exportExcel');
-              await downloadModelAsExcel(input, output, lastSyncMeta?.deals);
+              const { downloadModelAsExcelViaEngine } = await import('./report/downloadReport');
+              await downloadModelAsExcelViaEngine(input);
             }}
             onSync={runHubSpotSync}
           />
@@ -300,6 +234,15 @@ export default function App() {
         </button>
         <button
           role="tab"
+          aria-selected={view === 'balance-sheet'}
+          className={`view-tab ${view === 'balance-sheet' ? 'active' : ''}`}
+          onClick={() => setView('balance-sheet')}
+        >
+          Balance Sheet
+          <span className="view-tab-sub">simplified</span>
+        </button>
+        <button
+          role="tab"
           aria-selected={view === 'engine'}
           className={`view-tab ${view === 'engine' ? 'active' : ''}`}
           onClick={() => setView('engine')}
@@ -310,57 +253,81 @@ export default function App() {
       </div>
 
       {view === 'model' ? (
-        <ModelView
-          input={input}
-          output={output}
-          activeTA={activeTA}
-          setActiveTA={setActiveTA}
-          ta={ta}
-          taTotal6y={taTotal6y}
-          updateStart={updateStart}
-          updatePricing={updatePricing}
-          updateCommission={updateCommission}
-        />
+        <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="revenue-model" onEdit={handleReportEdit} />
       ) : view === 'total' ? (
-        <TotalView input={input} output={output} updateHubSpot={updateHubSpot} />
+        <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="total-revenue" onEdit={handleReportEdit} />
       ) : view === 'hubspot' ? (
         <HubSpotView
           input={input}
+          engineResult={engineResult}
           hubspotTotal={hubspotTotal}
           updateHubSpotSync={updateHubSpotSync}
           onSync={runHubSpotSync}
+          onReportEdit={handleReportEdit}
           lastSyncMeta={lastSyncMeta}
         />
       ) : view === 'hubspot-deals' ? (
         <HubSpotDealsView lastSyncMeta={lastSyncMeta} onSync={runHubSpotSync} />
       ) : view === 'employees' ? (
-        <EmployeesView
-          input={input}
-          output={output}
-          updateEmployee={updateEmployee}
-          updateAssumptions={updateEmployeeAssumptions}
-        />
+        <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="employees" onEdit={handleReportEdit} />
       ) : view === 'costs' ? (
-        <CostsView input={input} output={output} updateCostLine={updateCostLine} />
+        <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="costs" onEdit={handleReportEdit} />
+      ) : view === 'balance-sheet' ? (
+        <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="balance-sheet" onEdit={handleReportEdit} />
       ) : view === 'engine' ? (
-        <EnginePreview model={exampleModel} />
+        <EnginePreview
+          model={salesModel}
+          result={engineResult}
+          currentRef={route.ref}
+          onRefChange={setEngineRef}
+        />
       ) : (
-        <BudgetView input={input} output={output} />
+        <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="budget" onEdit={handleReportEdit} />
       )}
 
       <footer className="app-footer">
         <p>
-          Modeled from <code>5-year-plan.xlsx</code>. <strong>Revenue Model auto</strong> reproduces the spreadsheet's
-          per-TA totals exactly. <strong>HubSpot</strong> pipeline values come from the HubSpot Pivot tab and are editable
-          here (only spans Jan 2026 – Dec 2030). <strong>Employees</strong>: 48 people, 5% inflation each April starting
-          Apr 2027, compounded uniformly — the spreadsheet's Employees tab has formula bugs that omit inflation for
-          future-start hires and skip the Apr 2031 step, so this engine reads ~$9M higher over 6 years ($40.1M vs
-          $30.8M). Modeller commission and sales commission are <strong>derived from formulas</strong>, not the
-          spreadsheet's static rows: modeller comm = <code>min(80% × AI revenue, $30k cap)</code> per TA per month,
-          sales comm = <code>$6k × new clients + 12% × invoiced revenue</code>. Both rates and the cap are editable on
-          the Revenue Model auto tab. The 12% formula matches the spreadsheet's first four months exactly ($960 = 12% ×
-          $8k HubSpot in Jan/Feb 2026); later months in Excel drift from 12% due to hand-edited overrides which this
-          engine ignores.
+          Modeled from <code>5-year-plan.xlsx</code>. <strong>Revenue Model</strong> reproduces v4's modeled per-TA totals
+          exactly (e.g. Ophthalmology 2031 = $14,860,417 matches the Revenue Model auto sheet's row 83 sum to the cent).
+          <strong> HubSpot</strong> pipeline values come from the HubSpot Pivot tab and are now <em>allocated to TAs at sync
+          time</em> using deal-name regex rules editable on the HubSpot tab — default config catches every ophthalmology
+          term (WetAMD / GA / DME / DR / Glaucoma / cataract / OCT / fundus / retina / InSite) and routes all matching
+          deals to Ophthalmology. Add a rule (e.g. `\b(liver|mash|hepatic)\b` → "Hepatology") to fan deals out as new TAs
+          come online. <em>Per-(TA, month) manual revenue adjustments</em> on the Total Revenue tab reproduce v4's six 2026
+          Ophthalmology budget tweaks (Jan/Feb/Mar formula adds plus Oct/Nov/Dec hardcoded +$50k). With the defaults in
+          place, <strong>Total Revenue now matches v4 to the cent in every year 2026–2031.</strong> <strong>Employees</strong>: 48 people including 7 with end dates (Jonny / Daniella /
+          Tomike / Nikolas / Christopher / Ali / Lily — leaving Dec 2025 → May 2026), 5% inflation each April. Two v4
+          formula bugs are reproduced by default (toggle in the Employees assumptions): <code>maxInflationSteps=4</code>
+          (v4 skips the Apr 2031 step) and <code>inflateFutureHires=false</code> (v4 leaves future-start hires flat).
+          <strong> Modeller commission</strong> = <code>min(80% × AI revenue, $30k cap)</code> per TA per month, summed across
+          12 TAs — matches v4 to the cent in 2027 / 2029 / 2030 / 2031, off by $20k in 2028 due to spreadsheet formula
+          inconsistency (v4's row 304 sums B292:B295 in some columns and B292:B303 in others). <strong>Sales commission</strong>
+          = <code>min($6k × starts + 12% × revenue, 1.5 × Total Sales Salary)</code> where Total Sales Salary is the
+          sum of cap-eligible employees (David / Jonny / Muhammad / East+West Coast / Therapeutic 1+2) — matches v4
+          within 5% in all years. <strong>Balance Sheet</strong> derives every v4 line from the opening position
+          and monthly P&amp;L; opening values and AR/AP days are editable on the Balance Sheet tab.
+        </p>
+        <p>
+          <strong>Salary adjustments</strong>: v4's hand-edited per-cell salary tweaks (Naaman's ×0.8 from Apr 2026,
+          Blaise's ×0.66 from Apr 2026 then ×2.8052 from Apr 2027 tracking Naaman's salary) are now reproduced via a
+          sparse multiplier table editable on the Employees tab. Each row sets a factor on one employee's monthly cost
+          that carries forward until the next adjustment for the same employee. With the defaults in place, <strong>G&amp;A
+          / Engineering / Product Support staff costs now match v4 to the dollar in every year</strong> and yearly Total
+          Opex tracks v4 within $1 in 2028–2031.
+          <br /><br />
+          <strong>Sales commission</strong> is now overridden per-month from v4's hardcoded S&amp;M Commission line (every cell
+          in v4 is a pasted value — no formula at all). <strong>Modeller commission</strong> uses our `min(0.8 × AI revenue,
+          $30k cap)` per-TA formula plus four manual Jan/Feb/Mar/May 2026 historic-commitment entries. <strong>Depreciation</strong>
+          patches the Jan-Mar 2026 cells (v4 hardcodes Jan = `-256 × 1.32` = -$337.92 and leaves Feb/Mar empty, rather than pulling
+          from Capital Purchases). With all three in place, <strong>cost of sales now matches v4 to the cent in every year
+          except 2030 (-$5,000) and EBITDA matches to within $1 in 2027/2029/2031</strong>.
+          <br /><br />
+          Final piece: v4's G&amp;A Salaries Jan/Feb/Mar 2026 cells use formulas like `=Employees!L51-2642` (manual
+          actual-vs-modelled reconciliations subtracting $2,642 / $2,506 / $4,410). Pre-populated as G&amp;A staff actuals
+          for those three months, the per-dept totals auto-recompute (`staff_actual + non_staff_modelled +
+          derived_modelled`) and flow through Total Opex → EBITDA. <strong>Result: every Budget P&amp;L yearly line —
+          Revenue, Cost of Sales, Gross Profit, Total Opex, EBITDA — matches v4 to within $3 across all 6 years
+          (rounding noise on division and the cascading IF expressions).</strong>
         </p>
       </footer>
     </div>
@@ -481,13 +448,15 @@ function HeaderMenu({ onReset, onDownload, onSync }: HeaderMenuProps) {
 
 interface HubSpotViewProps {
   input: ModelInput;
+  engineResult: ReturnType<typeof evaluateSalesModel>;
   hubspotTotal: number;
   updateHubSpotSync: (next: HubSpotSyncAssumptions) => void;
   onSync: () => Promise<string>;
+  onReportEdit: (edit: Parameters<typeof applyEditToInput>[1]) => void;
   lastSyncMeta: import('./hubspot').SyncResult['meta'] | null;
 }
 
-function HubSpotView({ input, hubspotTotal, updateHubSpotSync, onSync, lastSyncMeta }: HubSpotViewProps) {
+function HubSpotView({ input, engineResult, hubspotTotal, updateHubSpotSync, onSync, onReportEdit, lastSyncMeta }: HubSpotViewProps) {
   const a = input.hubspotSync;
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -567,7 +536,8 @@ function HubSpotView({ input, hubspotTotal, updateHubSpotSync, onSync, lastSyncM
         {(() => {
           const summary = annualSummaryByType(input.hubspot, input.dates);
           return (
-            <table className="yearly-emp-table" style={{ maxWidth: 900 }}>
+            <div className="scroll-x" style={{ maxWidth: 900 }}>
+            <table className="yearly-emp-table">
               <thead>
                 <tr>
                   <th>Revenue type</th>
@@ -603,32 +573,24 @@ function HubSpotView({ input, hubspotTotal, updateHubSpotSync, onSync, lastSyncM
                 </tr>
               </tbody>
             </table>
+            </div>
           );
         })()}
       </section>
 
       <section>
-        <h2>Pipeline by line item × month <span className="hint">(synced state, editable in Total Revenue)</span></h2>
+        <h2>Pipeline by line item × month <span className="hint">(synced state, editable)</span></h2>
         <p className="hint">
           Monthly value of each HubSpot line item after applying the stage probability and payment
           schedule. Sums to the pipeline total above.
         </p>
-        {(() => {
-          const dates = input.dates;
-          const names = Object.keys(input.hubspot.lineItems).sort();
-          const rows: MonthlyRow[] = names.map((name) => ({
-            metric: name,
-            rowKey: `hs_${name}`,
-            values: input.hubspot.lineItems[name],
-          }));
-          rows.push({
-            metric: 'Total',
-            rowKey: 'hs_total',
-            isTotal: true,
-            values: input.hubspot.grandTotal,
-          });
-          return <MonthlyGrid dates={dates} rows={rows} height={28 + 30 * (rows.length + 1)} />;
-        })()}
+        <EngineSection
+          report={salesReport}
+          evalResult={engineResult}
+          model={salesModel}
+          sectionId="hubspot"
+          onEdit={onReportEdit}
+        />
       </section>
 
       <section>
@@ -979,6 +941,7 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
             {headerSort('name', 'Deal')}
             <th>Pipeline</th>
             {headerSort('stage', 'Stage')}
+            <th>TA</th>
             {headerSort('amount', 'Amount')}
             {headerSort('prob', 'Close prob')}
             {headerSort('expected', 'Expected')}
@@ -994,6 +957,7 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
               <td style={{ textAlign: 'left', maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.name}>{d.name}</td>
               <td style={{ textAlign: 'left' }}>{d.pipelineLabel}</td>
               <td style={{ textAlign: 'left' }}>{d.stageLabel}</td>
+              <td style={{ textAlign: 'left' }}>{d.therapeuticArea}</td>
               <td>{d.amountReported ? `$${Math.round(d.amountReported).toLocaleString()}` : ''}</td>
               <td>{(d.closeProbability * 100).toFixed(1)}%</td>
               <td className="bold">{d.expectedAmount ? `$${Math.round(d.expectedAmount).toLocaleString()}` : ''}</td>
@@ -1012,695 +976,7 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
   );
 }
 
-interface ModelViewProps {
-  input: ModelInput;
-  output: ReturnType<typeof computeModel>;
-  activeTA: string;
-  setActiveTA: (s: string) => void;
-  ta: NonNullable<ReturnType<typeof computeModel>['perTA'][string]>;
-  taTotal6y: number;
-  updateStart: (rowKey: string, monthIdx: number, value: number) => void;
-  updatePricing: (next: ModelInput['pricing']) => void;
-  updateCommission: (next: CommissionAssumptions) => void;
-}
-
-function ModelView({
-  input,
-  output,
-  activeTA,
-  setActiveTA,
-  ta,
-  taTotal6y,
-  updateStart,
-  updatePricing,
-  updateCommission,
-}: ModelViewProps) {
-  return (
-    <>
-      <section>
-        <h2>Pricing assumptions</h2>
-        <p className="hint">
-          Editable. Platform license per trial per year is derived: (Bitfount + AI license) × sites.
-          All projects last 12 months from start.
-        </p>
-        <PricingGrid pricing={input.pricing} onChange={updatePricing} />
-
-        <h3>Commission assumptions</h3>
-        <p className="hint">
-          Modeller commission (Cost of Sales) <code>= min(rate × Σ active × ai_license × sites / 12, cap)</code> per TA per month.
-          Sales commission (S&amp;M opex) <code>= per_client × Σ new starts + invoice_rate × revenue</code>.
-        </p>
-        <div className="commission-grid">
-          <CommissionGrid commission={input.commission} onChange={updateCommission} />
-        </div>
-      </section>
-
-      <section>
-        <h2>Yearly revenue summary <span className="hint">(modeled only)</span></h2>
-        <YearlySummary output={output} taNames={input.taNames} variant="modeled" />
-      </section>
-
-      <section>
-        <h2>Per-therapeutic-area detail</h2>
-        <div className="ta-tabs">
-          {input.taNames.map((name) => {
-            const active = output.yearly.perTA[name].total.some((v) => v > 0);
-            return (
-              <button
-                key={name}
-                onClick={() => setActiveTA(name)}
-                className={`tab ${name === activeTA ? 'active' : ''} ${active ? '' : 'empty'}`}
-              >
-                {name}
-                {active && (
-                  <span className="tab-total">
-                    ${(output.yearly.perTA[name].total.reduce((a, b) => a + b, 0) / 1e6).toFixed(1)}M
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="ta-content">
-          <div className="ta-summary">
-            <span className="ta-name">{activeTA}</span>
-            <span className="ta-total">6-yr total: ${Math.round(taTotal6y).toLocaleString()}</span>
-          </div>
-
-          <h3>Client starts per month <span className="hint">(editable)</span></h3>
-          <MonthlyGrid
-            dates={input.dates}
-            editable
-            onCellEdit={updateStart}
-            format="count"
-            rows={(['A', 'B', 'C'] as TrialType[]).map((t) => ({
-              metric: TYPE_LABEL[t],
-              rowKey: t,
-              type: t,
-              values: input.schedule[activeTA][t],
-            }))}
-            height={140}
-          />
-
-          <h3>
-            Active trials per month{' '}
-            <span className="hint">
-              (derived: 12-month duration — hover any cell or row label for the formula)
-            </span>
-          </h3>
-          <MonthlyGrid
-            dates={input.dates}
-            format="count"
-            rows={[
-              ...(['A', 'B', 'C'] as TrialType[]).map((t) => ({
-                metric: TYPE_LABEL[t],
-                rowKey: `active_${t}`,
-                type: t,
-                values: ta.byType[t].active,
-                rowTooltip: ROW_TOOLTIPS.activeType(t),
-                cellTooltip: (i: number, v: number) =>
-                  activeTypeCellTooltip(t, i, input.dates, input.schedule[activeTA][t], v),
-              })),
-              {
-                metric: 'Total active',
-                rowKey: 'active_total',
-                isTotal: true,
-                values: ta.byType.A.active.map(
-                  (_, i) => ta.byType.A.active[i] + ta.byType.B.active[i] + ta.byType.C.active[i],
-                ),
-                rowTooltip: ROW_TOOLTIPS.activeTotal,
-                cellTooltip: (i: number) => activeTotalCellTooltip(i, input.dates, ta),
-              },
-            ]}
-            height={170}
-          />
-
-          <h3>
-            Monthly revenue ($){' '}
-            <span className="hint">(hover any cell or row label for the formula)</span>
-          </h3>
-          <MonthlyGrid
-            dates={input.dates}
-            rows={[
-              {
-                metric: 'Platform revenue',
-                rowKey: 'platform',
-                values: ta.platform,
-                rowTooltip: ROW_TOOLTIPS.platform,
-                cellTooltip: (i: number) => platformCellTooltip(i, input.dates, ta, input),
-              },
-              {
-                metric: 'Project revenue',
-                rowKey: 'project',
-                values: ta.project,
-                rowTooltip: ROW_TOOLTIPS.project,
-                cellTooltip: (i: number) => projectCellTooltip(i, input.dates, ta, input, activeTA),
-              },
-              {
-                metric: 'PM fee revenue',
-                rowKey: 'pm',
-                values: ta.pm,
-                rowTooltip: ROW_TOOLTIPS.pm,
-                cellTooltip: (i: number) => pmCellTooltip(i, input.dates, ta, input),
-              },
-              {
-                metric: 'Total',
-                rowKey: 'total',
-                isTotal: true,
-                values: ta.total,
-                rowTooltip: ROW_TOOLTIPS.totalRev,
-                cellTooltip: (i: number) => totalRevCellTooltip(i, input.dates, ta),
-              },
-            ]}
-            height={170}
-          />
-        </div>
-      </section>
-    </>
-  );
-}
-
-interface EmployeesViewProps {
-  input: ModelInput;
-  output: ReturnType<typeof computeModel>;
-  updateEmployee: (id: string, field: 'salary' | 'startDate' | 'department' | 'position', value: string | number) => void;
-  updateAssumptions: (next: EmployeeAssumptions) => void;
-}
-
-function EmployeesView({ input, output, updateEmployee, updateAssumptions }: EmployeesViewProps) {
-  const empOut = output.employees;
-  const departments = Object.keys(empOut.perDepartment);
-  const total6y = empOut.total.reduce((a, b) => a + b, 0);
-  const yearlyTotals = empOut.yearly.total;
-
-  const monthlyRows: MonthlyRow[] = [];
-  for (const dept of departments) {
-    monthlyRows.push({
-      metric: dept,
-      rowKey: `dept_${dept}`,
-      values: empOut.perDepartment[dept],
-      rowTooltip: EMPLOYEE_DEPT_ROW_TOOLTIP,
-      cellTooltip: (i) => employeeDeptCellTooltip(dept, i, input.dates, empOut.perEmployee, input.employees),
-    });
-  }
-  monthlyRows.push({
-    metric: 'Total employee cost',
-    rowKey: 'emp_total',
-    isTotal: true,
-    values: empOut.total,
-    rowTooltip: EMPLOYEE_TOTAL_ROW_TOOLTIP,
-    cellTooltip: (i) => employeeTotalCellTooltip(i, input.dates, empOut.perDepartment),
-  });
-
-  return (
-    <>
-      <section>
-        <h2>Cost assumptions</h2>
-        <p className="hint">
-          Loaded salary = base salary × (1 + NI + pension). Annual inflation compounds each April starting at the
-          configured year/month — applied uniformly to every active employee.
-        </p>
-        <div className="employee-assumptions">
-          <EmployeeAssumptionsGrid assumptions={input.employeeAssumptions} onChange={updateAssumptions} />
-        </div>
-      </section>
-
-      <section>
-        <h2>Yearly employee cost</h2>
-        <div className="yearly-emp">
-          <table className="yearly-emp-table">
-            <thead>
-              <tr>
-                <th>Department</th>
-                {output.years.map((y) => <th key={y}>{y}</th>)}
-                <th>6-yr Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {departments.map((d) => {
-                const arr = empOut.yearly.perDepartment[d];
-                const total = arr.reduce((a, b) => a + b, 0);
-                return (
-                  <tr key={d}>
-                    <td>{d}</td>
-                    {arr.map((v, i) => <td key={i}>{money(v)}</td>)}
-                    <td className="bold">{money(total)}</td>
-                  </tr>
-                );
-              })}
-              <tr className="total-row">
-                <td>TOTAL</td>
-                {yearlyTotals.map((v, i) => <td key={i}>{money(v)}</td>)}
-                <td className="bold">{money(total6y)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2>Monthly cost by department <span className="hint">(hover any cell or row for the formula)</span></h2>
-        <MonthlyGrid
-          dates={input.dates}
-          rows={monthlyRows}
-          height={28 + 30 * (monthlyRows.length + 1)}
-        />
-      </section>
-
-      <section>
-        <h2>Employees <span className="hint">({input.employees.length} people — Salary, Position, Dept, Start are editable)</span></h2>
-        <EmployeeList
-          employees={input.employees}
-          assumptions={input.employeeAssumptions}
-          onChange={updateEmployee}
-        />
-      </section>
-    </>
-  );
-}
-
 function money(v: number): string {
   if (!v) return '';
   return '$' + Math.round(v).toLocaleString();
-}
-
-interface CostsViewProps {
-  input: ModelInput;
-  output: ReturnType<typeof computeModel>;
-  updateCostLine: (dept: CostDept, lineName: string, monthIdx: number, value: number) => void;
-}
-
-function CostsView({ input, output, updateCostLine }: CostsViewProps) {
-  const [activeDept, setActiveDept] = useState<CostDept>('Sales and Marketing');
-  const dept = activeDept;
-  const deptOut = output.budget.perDept[dept];
-  const lineItems = input.costs.lineItems[dept];
-  // Skip the static Commission line for S&M — it's replaced by the derived row.
-  const itemNames = Object.keys(lineItems).filter(
-    (n) => !(dept === 'Sales and Marketing' && n === 'Commission'),
-  );
-  const derivedNames = Object.keys(deptOut.derived);
-
-  const rows: MonthlyRow[] = [];
-  rows.push({
-    metric: 'Staff Costs',
-    rowKey: 'staff',
-    values: deptOut.staff,
-    rowTooltip:
-      'Staff Costs row pulls directly from the Employees tab — sum of every active employee in this department for the month, with annual inflation applied.',
-    cellTooltip: (i) =>
-      `${dept} staff cost — ${input.dates[i]}:\n${money(deptOut.staff[i])}\n\nDerived from the Employees tab. Edit individual salaries or start dates there.`,
-  });
-  for (const name of derivedNames) {
-    const arr = deptOut.derived[name];
-    rows.push({
-      metric: name,
-      rowKey: `derived_${name}`,
-      values: arr,
-      // editable explicitly false — derived row.
-      editable: false,
-      rowTooltip:
-        [
-          `${name}:`,
-          'Derived; not directly editable. Adjust the parameters in the AI Modeller commission / Sales commission config table on the Revenue Model auto tab.',
-          '',
-          'formula:\nsales_comm(m) = $/client × Σ_TA Σ_t starts_t(m) + invoice_rate × revenue(m)',
-          `current: $${input.commission.salesPerClient.toLocaleString()} per client + ${(input.commission.salesInvoiceRate * 100).toFixed(1)}% × revenue`,
-        ].join('\n'),
-      cellTooltip: (i) => {
-        let starts = 0;
-        for (const ta of input.taNames) {
-          const s = input.schedule[ta];
-          starts += (s.A[i] || 0) + (s.B[i] || 0) + (s.C[i] || 0);
-        }
-        const perClientPart = input.commission.salesPerClient * starts;
-        const invoicePart = input.commission.salesInvoiceRate * output.budget.revenue[i];
-        return [
-          `${name} — ${input.dates[i]}:`,
-          `total = ${money(arr[i])}`,
-          '',
-          'this cell:',
-          `  ${money(perClientPart)}  ($${input.commission.salesPerClient.toLocaleString()} × ${starts} new clients)`,
-          `  ${money(invoicePart)}  (${(input.commission.salesInvoiceRate * 100).toFixed(1)}% × ${money(output.budget.revenue[i])} revenue)`,
-          '  ─────',
-          `  total = ${money(arr[i])}`,
-        ].join('\n');
-      },
-    });
-  }
-  for (const name of itemNames) {
-    rows.push({
-      metric: name,
-      rowKey: `line_${name}`,
-      values: lineItems[name],
-      editable: true,
-      rowTooltip:
-        `${name}: editable monthly cost in the ${dept} budget. Imported from the spreadsheet's Budget section; change any cell to model an alternative.`,
-    });
-  }
-  rows.push({
-    metric: 'Total',
-    rowKey: 'total',
-    isTotal: true,
-    values: deptOut.total,
-    rowTooltip:
-      [
-        'Department total monthly cost:',
-        '',
-        'formula:\ntotal(m) = staff(m) + Σ derived(m) + Σ_line non-staff line items(m)',
-      ].join('\n'),
-    cellTooltip: (i) => {
-      const lines: string[] = [
-        `${dept} total — ${input.dates[i]}:`,
-        `total = ${money(deptOut.total[i])}`,
-        '',
-        'this cell:',
-        `  ${money(deptOut.staff[i])}  (Staff Costs)`,
-      ];
-      for (const name of derivedNames) {
-        const v = deptOut.derived[name][i];
-        if (v === 0) continue;
-        lines.push(`  ${money(v)}  (${name})`);
-      }
-      for (const name of itemNames) {
-        const v = lineItems[name][i];
-        if (v === 0) continue;
-        lines.push(`  ${money(v)}  (${name})`);
-      }
-      lines.push('  ─────', `  total = ${money(deptOut.total[i])}`);
-      return lines.join('\n');
-    },
-  });
-
-  return (
-    <>
-      <section>
-        <h2>Departmental cost detail</h2>
-        <p className="hint">
-          Each department's total cost = Staff Costs (derived from the Employees tab) + the editable line
-          items below. Yellow cells are editable; the Staff Costs row is read-only.
-        </p>
-        <div className="ta-tabs">
-          {input.costs.depts.map((d) => {
-            const t = output.budget.perDept[d].total.reduce((a, b) => a + b, 0);
-            return (
-              <button
-                key={d}
-                onClick={() => setActiveDept(d)}
-                className={`tab ${d === activeDept ? 'active' : ''}`}
-              >
-                {d}
-                <span className="tab-total">${(t / 1e6).toFixed(1)}M</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="ta-content">
-          <div className="ta-summary">
-            <span className="ta-name">{dept}</span>
-            <span className="ta-total">
-              6-yr total: ${Math.round(deptOut.total.reduce((a, b) => a + b, 0)).toLocaleString()}{' '}
-              <span className="hint">
-                (= ${Math.round(deptOut.staff.reduce((a, b) => a + b, 0)).toLocaleString()} staff +{' '}
-                ${Math.round(deptOut.nonStaff.reduce((a, b) => a + b, 0)).toLocaleString()} other)
-              </span>
-            </span>
-          </div>
-
-          <h3>Monthly cost <span className="hint">(hover any cell or row label for the formula)</span></h3>
-          <MonthlyGrid
-            dates={input.dates}
-            rows={rows}
-            onCellEdit={(rowKey, i, v) => {
-              if (!rowKey.startsWith('line_')) return;
-              updateCostLine(dept, rowKey.slice(5), i, v);
-            }}
-            height={28 + 30 * (rows.length + 1)}
-          />
-        </div>
-      </section>
-    </>
-  );
-}
-
-interface BudgetViewProps {
-  input: ModelInput;
-  output: ReturnType<typeof computeModel>;
-}
-
-function BudgetView({ input, output }: BudgetViewProps) {
-  const b = output.budget;
-  const monthlyRows: MonthlyRow[] = [
-    {
-      metric: 'Revenue (HubSpot + modeled)',
-      rowKey: 'rev',
-      values: b.revenue,
-      rowTooltip: 'Total revenue: HubSpot pipeline + modeled-TA revenue per month.',
-      cellTooltip: (i) =>
-        `Revenue ${input.dates[i]}:\n${money(b.revenue[i])}\n\n  ${money(b.modeledRevenue[i])} (modeled)\n+ ${money(b.hubspot[i])} (HubSpot)`,
-    },
-    {
-      metric: 'Modeller Commission',
-      rowKey: 'commission',
-      values: b.modellerCommission.map((v) => -v),
-      rowTooltip:
-        [
-          'Modeller Commission (Cost of Sales):',
-          `Computed per TA per month as min(rate × AI revenue, cap).`,
-          '',
-          'formula:\ncomm_TA(m) = min(rate × Σ_t active_t × ai_t × sites_t / 12, cap)',
-          'rate = ' + (input.commission.rate * 100).toFixed(0) + '%, cap = $' + Math.round(input.commission.capPerMonth).toLocaleString() + ' / TA / month',
-        ].join('\n'),
-      cellTooltip: (i) => {
-        const lines: string[] = [`Modeller Commission ${input.dates[i]}:`, `total = ${money(-b.modellerCommission[i])}`, '', 'this cell:'];
-        for (const ta of input.taNames) {
-          const v = b.modellerCommissionByTA[ta][i];
-          if (v === 0) continue;
-          const capped = v >= input.commission.capPerMonth - 0.01;
-          lines.push(`  ${money(v)}  (${ta})${capped ? '  ← at cap' : ''}`);
-        }
-        if (lines.length === 4) lines.push('  no commission this month');
-        return lines.join('\n');
-      },
-    },
-    {
-      metric: 'Capital Depreciation',
-      rowKey: 'depr',
-      values: b.depreciation.map((v) => -v),
-      rowTooltip: 'Cost of Sales: amortised capital purchases (computers etc.) per the Capital Purchases schedule.',
-      cellTooltip: (i) =>
-        `Depreciation ${input.dates[i]}:\n${money(-b.depreciation[i])}\n\nFrom Capital Purchases row 155.`,
-    },
-    {
-      metric: 'Gross Profit',
-      rowKey: 'gp',
-      isTotal: true,
-      values: b.grossProfit,
-      rowTooltip:
-        'formula:\ngross_profit(m) = revenue(m) − cost_of_sales(m)\n              = revenue(m) − modeller_commission(m) − depreciation(m)',
-      cellTooltip: (i) =>
-        `Gross Profit ${input.dates[i]}:\n${money(b.grossProfit[i])}\n\n  ${money(b.revenue[i])} (revenue)\n− ${money(b.modellerCommission[i])} (modeller commission)\n− ${money(b.depreciation[i])} (depreciation)`,
-    },
-  ];
-
-  for (const dept of input.costs.depts) {
-    monthlyRows.push({
-      metric: dept,
-      rowKey: `dept_${dept}`,
-      values: b.perDept[dept].total.map((v) => -v),
-      rowTooltip:
-        `${dept} total opex (Staff + line items). Negative because it's an expense.`,
-      cellTooltip: (i) =>
-        `${dept} ${input.dates[i]}:\n${money(-b.perDept[dept].total[i])}\n  (= staff ${money(b.perDept[dept].staff[i])} + non-staff ${money(b.perDept[dept].nonStaff[i])})`,
-    });
-  }
-
-  monthlyRows.push({
-    metric: 'Total Opex',
-    rowKey: 'opex',
-    isTotal: true,
-    values: b.totalOpex.map((v) => -v),
-    rowTooltip: 'Sum of all departmental opex (negative).',
-    cellTooltip: (i) =>
-      `Total Opex ${input.dates[i]}:\n${money(-b.totalOpex[i])}\n\nSum across S&M, G&A, Engineering, Product Support.`,
-  });
-  monthlyRows.push({
-    metric: 'EBITDA',
-    rowKey: 'ebitda',
-    isTotal: true,
-    values: b.ebitda,
-    rowTooltip:
-      'formula:\nEBITDA(m) = gross_profit(m) − total_opex(m)',
-    cellTooltip: (i) =>
-      `EBITDA ${input.dates[i]}:\n${money(b.ebitda[i])}\n\n  ${money(b.grossProfit[i])} (gross profit)\n− ${money(b.totalOpex[i])} (opex)`,
-  });
-
-  const yearly = b.yearly;
-  return (
-    <>
-      <section>
-        <h2>Yearly P&amp;L</h2>
-        <table className="yearly-emp-table">
-          <thead>
-            <tr>
-              <th>Line</th>
-              {output.years.map((y) => <th key={y}>{y}</th>)}
-              <th>6-yr Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Revenue</td>
-              {yearly.revenue.map((v, i) => <td key={i}>{money(v)}</td>)}
-              <td className="bold">{money(yearly.revenue.reduce((a, b) => a + b, 0))}</td>
-            </tr>
-            <tr>
-              <td>Cost of Sales</td>
-              {yearly.costOfSales.map((v, i) => <td key={i}>−{money(v)}</td>)}
-              <td className="bold">−{money(yearly.costOfSales.reduce((a, b) => a + b, 0))}</td>
-            </tr>
-            <tr className="subtotal-row">
-              <td>Gross Profit</td>
-              {yearly.grossProfit.map((v, i) => <td key={i}>{money(v)}</td>)}
-              <td className="bold">{money(yearly.grossProfit.reduce((a, b) => a + b, 0))}</td>
-            </tr>
-            {input.costs.depts.map((d) => {
-              const arr = yearly.perDept[d].total;
-              return (
-                <tr key={d}>
-                  <td>{d}</td>
-                  {arr.map((v, i) => <td key={i}>−{money(v)}</td>)}
-                  <td className="bold">−{money(arr.reduce((a, b) => a + b, 0))}</td>
-                </tr>
-              );
-            })}
-            <tr className="subtotal-row">
-              <td>Total Opex</td>
-              {yearly.totalOpex.map((v, i) => <td key={i}>−{money(v)}</td>)}
-              <td className="bold">−{money(yearly.totalOpex.reduce((a, b) => a + b, 0))}</td>
-            </tr>
-            <tr className="total-row">
-              <td>EBITDA</td>
-              {yearly.ebitda.map((v, i) => <td key={i} className={v < 0 ? 'neg' : ''}>{money(v)}</td>)}
-              <td className="bold">{money(yearly.ebitda.reduce((a, b) => a + b, 0))}</td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section>
-        <h2>Monthly P&amp;L</h2>
-        <p className="hint">Revenue and gross-profit margins improve as modeled-TA revenue ramps. Hover any cell for the breakdown.</p>
-        <MonthlyGrid
-          dates={input.dates}
-          rows={monthlyRows}
-          height={28 + 30 * (monthlyRows.length + 1)}
-        />
-      </section>
-    </>
-  );
-}
-
-interface TotalViewProps {
-  input: ModelInput;
-  output: ReturnType<typeof computeModel>;
-  updateHubSpot: (rowKey: string, monthIdx: number, value: number) => void;
-}
-
-function TotalView({ input, output, updateHubSpot }: TotalViewProps) {
-  const activeTaNames = input.taNames.filter((n) =>
-    output.yearly.perTA[n].total.some((v) => v > 0),
-  );
-  // Show all line items so the user can edit any of them — even ones that started at zero.
-  const lineItemNames = Object.keys(input.hubspot.lineItems);
-
-  const rows: MonthlyRow[] = [];
-
-  for (const name of lineItemNames) {
-    rows.push({
-      metric: name,
-      rowKey: `hs_${name}`,
-      values: input.hubspot.lineItems[name],
-      editable: true,
-      rowTooltip: HUBSPOT_ROW_TOOLTIP,
-      cellTooltip: (i, v) => hubspotLineCellTooltip(name, i, input.dates, v),
-    });
-  }
-  rows.push({
-    metric: 'HubSpot pipeline (subtotal)',
-    rowKey: 'hs_subtotal',
-    isTotal: true,
-    values: input.hubspot.grandTotal,
-    rowTooltip: HUBSPOT_ROW_TOOLTIP,
-    cellTooltip: (i) => hubspotSubtotalCellTooltip(i, input.dates, input.hubspot.lineItems),
-  });
-
-  for (const name of activeTaNames) {
-    const taOut = output.perTA[name];
-    rows.push({
-      metric: name,
-      rowKey: `ta_${name}`,
-      values: taOut.total,
-      rowTooltip: TA_TOTAL_ROW_TOOLTIP,
-      cellTooltip: (i) => taTotalCellTooltip(name, i, input.dates, taOut),
-    });
-  }
-  rows.push({
-    metric: 'Modeled TAs (subtotal)',
-    rowKey: 'ta_subtotal',
-    isTotal: true,
-    values: output.totals.total,
-    rowTooltip: TA_TOTAL_ROW_TOOLTIP,
-    cellTooltip: (i) => modeledSubtotalCellTooltip(i, input.dates, output.perTA, activeTaNames),
-  });
-
-  rows.push({
-    metric: 'Grand total (HubSpot + modeled)',
-    rowKey: 'grand_total',
-    isTotal: true,
-    values: output.grandTotal,
-    rowTooltip: GRAND_TOTAL_ROW_TOOLTIP,
-    cellTooltip: (i) => grandTotalCellTooltip(i, input.dates, input.hubspot.grandTotal[i], output.totals.total[i]),
-  });
-
-  const hsTotal = input.hubspot.grandTotal.reduce((a, b) => a + b, 0);
-  const modeledTotal = output.totals.total.reduce((a, b) => a + b, 0);
-
-  return (
-    <>
-      <section>
-        <h2>Yearly revenue summary <span className="hint">(HubSpot + modeled)</span></h2>
-        <YearlySummary output={output} taNames={input.taNames} variant="total" />
-      </section>
-
-      <section>
-        <h2>Total Revenue <span className="hint">(modeled TAs + HubSpot pipeline)</span></h2>
-        <div className="ta-summary">
-          <span className="ta-name">All revenue</span>
-          <span className="ta-total">
-            6-yr total: ${Math.round(hsTotal + modeledTotal).toLocaleString()}{' '}
-            <span className="hint">
-              (= ${Math.round(hsTotal).toLocaleString()} HubSpot + ${Math.round(modeledTotal).toLocaleString()} modeled)
-            </span>
-          </span>
-        </div>
-
-        <h3>
-          Monthly revenue ($){' '}
-          <span className="hint">
-            HubSpot pipeline rows are editable (yellow cells). Modeled rows derive from the Revenue Model auto tab.
-            Hover any cell or row label for the formula.
-          </span>
-        </h3>
-        <MonthlyGrid
-          dates={input.dates}
-          rows={rows}
-          onCellEdit={updateHubSpot}
-          height={28 + 30 * (rows.length + 1)}
-        />
-      </section>
-    </>
-  );
 }

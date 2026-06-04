@@ -23,21 +23,15 @@ export default function Modal({ open, onClose, title, children, maxWidth = 1100 
       aria-modal="true"
       aria-label={title}
       onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-      }}
+      className="modal-backdrop"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#fff', borderRadius: 8, maxWidth, width: '100%',
-          maxHeight: '90vh', overflow: 'auto', padding: 16,
-          boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
-        }}
+        className="modal-dialog"
+        style={{ maxWidth }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 16 }}>{title}</h2>
+        <div className="modal-header">
+          <h2>{title}</h2>
           <button className="btn" onClick={onClose} aria-label="Close">Close</button>
         </div>
         {children}

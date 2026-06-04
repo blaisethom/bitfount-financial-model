@@ -2,7 +2,7 @@
 // Keeps model definitions readable without writing raw AST nodes by hand.
 
 import type {
-  AggExpr, BinaryOp, CellValue, Expr, FunctionName, ModelDef, Row,
+  AggExpr, BinaryOp, CellValue, ColumnType, Expr, FunctionName, ModelDef, Row,
   SourceDef, Step, TableOp, TableRef, TableSchema,
 } from './types';
 
@@ -45,6 +45,22 @@ export function manual(opts: {
   return { kind: 'manual', schema: opts.schema, defaults: opts.defaults, description: opts.description };
 }
 
+export function sequence(opts: {
+  column: string;
+  count: number;
+  description?: string;
+  type?: ColumnType;
+}): SourceDef {
+  const type: ColumnType = opts.type ?? 'number';
+  return {
+    kind: 'sequence',
+    column: opts.column,
+    count: opts.count,
+    description: opts.description,
+    schema: { columns: [{ name: opts.column, type }] },
+  };
+}
+
 // ─── Step builder ────────────────────────────────────────────────────────
 
 export function step(s: Step): Step {
@@ -62,11 +78,18 @@ export const ops = {
   join: (
     right: TableRef,
     on: Array<{ left: string; right: string }>,
-    type: 'inner' | 'left' = 'inner',
+    type: 'inner' | 'left' | 'cross' = 'inner',
   ): TableOp => ({ op: 'join', right, on, type }),
+  cross: (right: TableRef): TableOp => ({ op: 'join', right, on: [], type: 'cross' }),
   union: (tables: TableRef[]): TableOp => ({ op: 'union', tables }),
   sort: (by: Array<{ column: string; desc?: boolean }>): TableOp => ({ op: 'sort', by }),
   limit: (n: number): TableOp => ({ op: 'limit', n }),
+  window: (opts: {
+    partitionBy: string[];
+    orderBy: string;
+    range: { preceding: number; following: number };
+    derive: Record<string, AggExpr>;
+  }): TableOp => ({ op: 'window', ...opts }),
 };
 
 // ─── Expression builders ─────────────────────────────────────────────────
@@ -101,6 +124,32 @@ export const abs = (a: Expr) => fn('abs', [a]);
 export const round = (a: Expr, digits: Expr = lit(0)) => fn('round', [a, digits]);
 export const concat = (...args: Expr[]) => fn('concat', args);
 export const coalesce = (...args: Expr[]) => fn('coalesce', args);
+export const pow = (base: Expr, exponent: Expr) => fn('pow', [base, exponent]);
+
+// Date functions — assume YYYY-MM[-DD] string input.
+export const year = (date: Expr) => fn('year', [date]);
+export const month = (date: Expr) => fn('month', [date]);
+export const day = (date: Expr) => fn('day', [date]);
+
+// String functions.
+export const left = (s: Expr, n: Expr) => fn('left', [s, n]);
+export const right = (s: Expr, n: Expr) => fn('right', [s, n]);
+export const mid = (s: Expr, start: Expr, len: Expr) => fn('mid', [s, start, len]);
+export const len = (s: Expr) => fn('len', [s]);
+export const upper = (s: Expr) => fn('upper', [s]);
+export const lower = (s: Expr) => fn('lower', [s]);
+export const trim = (s: Expr) => fn('trim', [s]);
+
+// Math.
+export const int = (n: Expr) => fn('int', [n]);
+export const floor = (n: Expr) => fn('floor', [n]);
+export const ceiling = (n: Expr) => fn('ceiling', [n]);
+export const sqrt = (n: Expr) => fn('sqrt', [n]);
+export const mod = (a: Expr, b: Expr) => fn('mod', [a, b]);
+
+// Logical / coercion.
+export const isBlank = (a: Expr) => fn('isblank', [a]);
+export const value = (s: Expr) => fn('value', [s]);
 
 // ─── Aggregation builders ────────────────────────────────────────────────
 

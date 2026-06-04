@@ -43,9 +43,17 @@ const BINARY_INFIX: Partial<Record<BinaryOp, string>> = {
   '=': '=', '!=': '<>', '<': '<', '<=': '<=', '>': '>', '>=': '>=',
 };
 
-const FN_NAME: Record<FunctionName, string> = {
+// Straightforward 1:1 mappings. Functions needing special handling (coalesce
+// nesting, YEAR/MONTH/DAY string-slicing) are intercepted in emitExprFormula.
+const FN_NAME: Partial<Record<FunctionName, string>> = {
   min: 'MIN', max: 'MAX', if: 'IF', abs: 'ABS', round: 'ROUND',
-  concat: 'CONCATENATE', coalesce: 'IFERROR',
+  concat: 'CONCATENATE', pow: 'POWER',
+  left: 'LEFT', right: 'RIGHT', mid: 'MID', len: 'LEN',
+  upper: 'UPPER', lower: 'LOWER', trim: 'TRIM',
+  int: 'INT', sqrt: 'SQRT', mod: 'MOD',
+  isblank: 'ISBLANK', value: 'VALUE',
+  // FLOOR/CEILING — use the *.MATH variants so a single argument works.
+  floor: 'FLOOR.MATH', ceiling: 'CEILING.MATH',
 };
 
 /**
@@ -100,7 +108,15 @@ export function emitExprFormula(expr: Expr, rowIdx: number, columnMap: ColumnLet
           i === args.length - 1 ? cur : `IFERROR(${cur},${acc})`,
         '');
       }
-      return `${FN_NAME[expr.name]}(${args.join(',')})`;
+      // YEAR/MONTH/DAY: our convention is a YYYY-MM[-DD] string, not an Excel
+      // serial date. Emit explicit substring extraction so it works regardless
+      // of cell formatting / locale.
+      if (expr.name === 'year') return `VALUE(LEFT(${args[0]},4))`;
+      if (expr.name === 'month') return `VALUE(MID(${args[0]},6,2))`;
+      if (expr.name === 'day') return `VALUE(MID(${args[0]},9,2))`;
+      const xl = FN_NAME[expr.name];
+      if (!xl) throw new Error(`emitExprFormula: no Excel mapping for fn "${expr.name}"`);
+      return `${xl}(${args.join(',')})`;
     }
   }
 }
