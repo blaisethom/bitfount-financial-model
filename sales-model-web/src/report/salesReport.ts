@@ -880,7 +880,10 @@ const balanceSheetSection: ReportSection = {
     { kind: 'paragraph', italic: true,
       text:
         'Modeling notes: (1) Tangible assets follow the per-month capex schedule less ' +
-        'cumulative depreciation. (2) Trade debtors = revenue × AR days / 30; the four ' +
+        'cumulative depreciation, floored at 0 — v4\'s depreciation schedule writes off ' +
+        'more than was ever capitalised (~$189k over the horizon), so the raw book value ' +
+        'would go negative; we floor it and add the disallowed depreciation back to ' +
+        'Current Earnings so the sheet still balances. (2) Trade debtors = revenue × AR days / 30; the four ' +
         'other working-capital lines (trade creditors, other debtors, VAT, other ' +
         'creditors) come from per-month v4 closing balances in bs_monthly_schedule_t. ' +
         '(3) Current earnings = cumulative profit-after-tax (EBITDA − depreciation + ' +

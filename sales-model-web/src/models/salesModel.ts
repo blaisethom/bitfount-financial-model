@@ -21,7 +21,7 @@
 
 import {
   defineModel, manual, sequence, step, ops, agg,
-  col, lit, add, sub, mul, div, lt, le, ge, eq, ne, and, or, iff, min as minFn, pow,
+  col, lit, add, sub, mul, div, lt, le, ge, eq, ne, and, or, iff, min as minFn, max as maxFn, pow,
   year, month, floor, mod, concat,
 } from '../engine';
 import { FLATTEN_SCHEMAS as S } from './flatten';
@@ -204,11 +204,12 @@ export const salesModel = defineModel({
       description:
         'Per-month BS schedule: capex spent, loan principal repaid, and ' +
         'closing balances for Trade Creditors / Other Debtors / VAT / Other ' +
-        'Creditors. Defaults reproduce v4 month-by-month (capex annualised ' +
-        'from tangible-asset trajectory; loans: $12,000/mo from Oct 2026 for ' +
-        '18 months; WC lines pulled from Budgets rows 73/74/78/80). Drives ' +
-        'tangible-assets, loans, the four WC balances, and the cash ' +
-        'waterfall — so editing any cell here flows into the BS.',
+        'Creditors. Defaults refreshed from v4-model.xlsx (capex = Capital ' +
+        'Purchases!row65; loan paydown clears the $217,680 BlueJay balance on ' +
+        'v4\'s path — $23,640 in Jan-2026 then $12,000/mo Apr-2027→Jul-2028; ' +
+        'WC lines from Budgets rows 73/74/78/80). Drives tangible-assets, ' +
+        'loans, the four WC balances, and the cash waterfall — so editing any ' +
+        'cell here flows into the BS.',
     }),
     employee_adjustments_sparse_t: manual({
       schema: S.employee_adjustments_sparse,
@@ -1376,9 +1377,10 @@ export const salesModel = defineModel({
       id: 'tangible_assets_monthly_map',
       name: 'Tangible assets per month (compute)',
       description:
-        'tangible_assets = opening_tangible_assets + cumulative_capex − cumulative_depreciation. ' +
-        'Per-month capex from the bs_monthly_schedule reproduces v4\'s asset ramp ' +
-        '($20k → $77k → $195k → $222k → $120k → $0 by year-end).',
+        'tangible_assets = opening_tangible_assets + cumulative_capex − cumulative_depreciation ' +
+        '(raw, pre-floor; the bs_summary_monthly step floors it at 0). Per-month ' +
+        'capex from the bs_monthly_schedule tracks v4 Capital Purchases — year-end ' +
+        'tangible ≈ $6k → $62k → $180k → $207k → $105k → $0 (floored).',
       input: 'tangible_assets_with_opening',
       op: ops.map({
         tangible_assets: sub(
@@ -1772,9 +1774,26 @@ export const salesModel = defineModel({
         'total_current_liabilities, net_assets, total_equity), and emits a ' +
         '`difference` check (net_assets − total_equity) which should round to zero.',
       input: 'bs_summary_step10',
+      // Tangible Assets cannot fall below zero. v4's depreciation schedule
+      // (Capital Purchases!155 ≈ $1.316M) exceeds the total capitalised cost
+      // (opening $45,635 + capex $1,081,600 = $1,127,235) by ~$189k, so the
+      // raw book value (opening + Σcapex − Σdepreciation) turns negative in
+      // late 2031. v4 hides this by leaving the Tangible Assets formula
+      // un-dragged to the final columns, so it snaps to 0 in Dec-2031 (a
+      // spreadsheet bug). We floor it honestly via `max(raw, 0)`. The
+      // depreciation that floor disallows (`max(−raw, 0)` — i.e. the part that
+      // would have written the asset below zero) is added back into Current
+      // Earnings, since you cannot expense depreciation on an asset you no
+      // longer carry. Both adjustments are equal and land on opposite sides of
+      // the sheet, so Net Assets ≡ Total Equity is preserved (Difference → 0).
       op: ops.map({
+        tangible_assets: maxFn(col('tangible_assets'), lit(0)),
+        current_earnings: add(
+          col('current_earnings'),
+          maxFn(sub(lit(0), col('tangible_assets')), lit(0)),
+        ),
         intangible_assets: col('opening_intangible_assets'),
-        total_fixed_assets: add(col('tangible_assets'), col('opening_intangible_assets')),
+        total_fixed_assets: add(maxFn(col('tangible_assets'), lit(0)), col('opening_intangible_assets')),
         total_current_assets: add(
           add(col('trade_debtors'), col('other_debtors')),
           add(col('vat'), col('cash')),
@@ -1785,7 +1804,7 @@ export const salesModel = defineModel({
           add(col('opening_deferred_revenue'), col('other_creditors')),
         ),
         net_assets: add(
-          add(col('tangible_assets'), col('opening_intangible_assets')),
+          add(maxFn(col('tangible_assets'), lit(0)), col('opening_intangible_assets')),
           add(
             add(
               add(col('trade_debtors'), col('other_debtors')),
@@ -1804,12 +1823,15 @@ export const salesModel = defineModel({
           add(col('share_capital'), col('share_premium')),
           add(
             col('other_reserve'),
-            add(col('bfwd_retained_earnings'), col('current_earnings')),
+            add(
+              col('bfwd_retained_earnings'),
+              add(col('current_earnings'), maxFn(sub(lit(0), col('tangible_assets')), lit(0))),
+            ),
           ),
         ),
         difference: sub(
           add(
-            add(col('tangible_assets'), col('opening_intangible_assets')),
+            add(maxFn(col('tangible_assets'), lit(0)), col('opening_intangible_assets')),
             add(
               add(
                 add(col('trade_debtors'), col('other_debtors')),
@@ -1828,7 +1850,10 @@ export const salesModel = defineModel({
             add(col('share_capital'), col('share_premium')),
             add(
               col('other_reserve'),
-              add(col('bfwd_retained_earnings'), col('current_earnings')),
+              add(
+                col('bfwd_retained_earnings'),
+                add(col('current_earnings'), maxFn(sub(lit(0), col('tangible_assets')), lit(0))),
+              ),
             ),
           ),
         ),
