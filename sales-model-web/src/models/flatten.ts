@@ -166,6 +166,7 @@ const SCHEMAS = {
       { name: 'share_premium', type: 'number' as const, description: 'Share premium reserve (constant)' },
       { name: 'other_reserve', type: 'number' as const, description: 'Other reserves (constant)' },
       { name: 'bfwd_retained_earnings', type: 'number' as const, description: 'Brought-forward retained earnings (constant)' },
+      { name: 'v4_reported_bfwd_retained_earnings', type: 'number' as const, description: "v4's reported opening BFWD (Budgets!G91) — reconciliation only, does not affect modeled balances" },
     ],
   } satisfies TableSchema,
 
@@ -566,6 +567,7 @@ export function flattenModelInput(input: ModelInput): FlattenedInput {
       share_premium: input.openingBs.sharePremium,
       other_reserve: input.openingBs.otherReserve,
       bfwd_retained_earnings: input.openingBs.bfwdRetainedEarnings,
+      v4_reported_bfwd_retained_earnings: input.openingBs.v4ReportedBfwdRetainedEarnings,
     }],
   };
 

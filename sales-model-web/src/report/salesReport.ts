@@ -872,6 +872,11 @@ const balanceSheetSection: ReportSection = {
           // ── Check ──
           { source: 'bs_summary_monthly_with_actuals', identity: {}, valueCol: 'difference',
             label: 'Difference (Net Assets − Equity)' },
+          // ── Reconciliation to v4 ──
+          { source: 'bs_summary_monthly_with_actuals', identity: {}, valueCol: 'v4_opening_restatement',
+            label: 'v4 opening retained-earnings restatement (add-back)' },
+          { source: 'bs_summary_monthly_with_actuals', identity: {}, valueCol: 'net_assets_v4_basis',
+            label: 'Net Assets (v4 basis — reconciles to v4)', bold: true },
         ],
       },
       rollup: { grandTotal: true, grandTotalLabel: 'End of horizon' },
@@ -891,7 +896,13 @@ const balanceSheetSection: ReportSection = {
         'limit that we don\'t model Corporation Tax (kicks in 2029+ in v4, ~19% of ' +
         'operating profit). (4) Cash = opening + cum PaT + cum depreciation add-back ' +
         '− cum capex − cum loan repayments − ΔWC — textbook indirect-method waterfall, ' +
-        'so the BS balances (Difference rounds to zero).',
+        'so the BS balances (Difference rounds to zero). (5) Reconciliation to v4: ' +
+        'v4 rebases opening retained earnings at Jan-2026 by +£398,942 above what its ' +
+        'own Dec-2025 close supports (an unreconciled v4 restatement). We keep the ' +
+        'correct figure, so our Net Assets sits ~£417k below v4 every year; the ' +
+        '“v4 opening restatement” add-back and “Net Assets (v4 basis)” lines make ' +
+        'this explicit — the v4-basis figure ties to v4 within the ~£18k ' +
+        'current-earnings timing difference.',
     },
     { kind: 'spacer', rows: 2 },
 
@@ -924,6 +935,8 @@ const balanceSheetSection: ReportSection = {
           { col: 'current_earnings',          label: 'Current earnings' },
           { col: 'total_equity',              label: 'Total Equity', bold: true },
           { col: 'difference',                label: 'Difference (Net Assets − Equity)' },
+          { col: 'v4_opening_restatement',    label: 'v4 opening retained-earnings restatement (add-back)' },
+          { col: 'net_assets_v4_basis',       label: 'Net Assets (v4 basis — reconciles to v4)', bold: true },
         ],
       },
       defaultFormat: 'money',

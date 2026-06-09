@@ -195,6 +195,14 @@ export function loadInitialInput(): ModelInput {
     sharePremium: 12_316_680,
     otherReserve: 0,
     bfwdRetainedEarnings: -11_536_167,
+    // v4's *reported* opening BFWD (Budgets!G91 = −8,437,292 GBP × 1.32). It is
+    // £398,942 less negative than our arithmetically-correct figure above —
+    // v4 rebases opening retained earnings at Jan-2026 by an amount that does
+    // not reconcile to its own Dec-2025 close (BFWD −7,539,789 + 2025 earnings
+    // −3,996,378 = −11,536,167). Drives the BS "Net Assets (v4 basis)"
+    // reconciliation line only; changes no modeled balance. See the Excel-bug
+    // notes. v4's overstatement is what puts v4's Net Assets ~£417k above ours.
+    v4ReportedBfwdRetainedEarnings: -11_137_225,
   };
 
   const bsAssumptions: BalanceSheetAssumptions = {

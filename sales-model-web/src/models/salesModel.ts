@@ -1857,6 +1857,30 @@ export const salesModel = defineModel({
             ),
           ),
         ),
+        // Reconciliation to v4: v4 rebases opening BFWD retained earnings at
+        // Jan-2026 by ~£398,942 above what its own Dec-2025 close supports (an
+        // unreconciled v4 restatement — see data.ts). We keep the correct
+        // figure, so our Net Assets sits ~£417k below v4 every year. These two
+        // memo columns make that explicit: the restatement amount, and Net
+        // Assets restated onto v4's basis (which then ties to v4 within the
+        // ~£18k current-earnings timing difference).
+        v4_opening_restatement: sub(
+          col('v4_reported_bfwd_retained_earnings'),
+          col('bfwd_retained_earnings'),
+        ),
+        net_assets_v4_basis: add(
+          add(
+            add(maxFn(col('tangible_assets'), lit(0)), col('opening_intangible_assets')),
+            add(
+              add(add(col('trade_debtors'), col('other_debtors')), add(col('vat'), col('cash'))),
+              add(
+                add(col('trade_creditors'), add(col('opening_deferred_revenue'), col('other_creditors'))),
+                col('loans'),
+              ),
+            ),
+          ),
+          sub(col('v4_reported_bfwd_retained_earnings'), col('bfwd_retained_earnings')),
+        ),
       }),
       output: 'bs_summary_monthly',
     }),
@@ -1965,6 +1989,24 @@ export const salesModel = defineModel({
             ),
           ),
         ),
+        // Recompute the v4-reconciliation memos from the overridden lines too.
+        v4_opening_restatement: sub(
+          col('v4_reported_bfwd_retained_earnings'),
+          col('bfwd_retained_earnings'),
+        ),
+        net_assets_v4_basis: add(
+          add(
+            add(col('tangible_assets'), col('intangible_assets')),
+            add(
+              add(add(col('trade_debtors'), col('other_debtors')), add(col('vat'), col('cash'))),
+              add(
+                add(col('trade_creditors'), add(col('deferred_revenue'), col('other_creditors'))),
+                col('loans'),
+              ),
+            ),
+          ),
+          sub(col('v4_reported_bfwd_retained_earnings'), col('bfwd_retained_earnings')),
+        ),
       }),
       output: 'bs_summary_monthly_with_actuals',
     }),
@@ -2016,6 +2058,8 @@ export const salesModel = defineModel({
         current_earnings: agg.sum('current_earnings'),
         total_equity: agg.sum('total_equity'),
         difference: agg.sum('difference'),
+        v4_opening_restatement: agg.sum('v4_opening_restatement'),
+        net_assets_v4_basis: agg.sum('net_assets_v4_basis'),
       }),
       output: 'bs_yearly_with_actuals',
     }),

@@ -204,6 +204,14 @@ export interface OpeningBalanceSheet {
   sharePremium: number;
   otherReserve: number;
   bfwdRetainedEarnings: number;
+  /** v4-model.xlsx's *reported* opening BFWD retained earnings (Budgets!G91 =
+   *  −£11,137,225). It is ~£399k less negative than the arithmetically-correct
+   *  roll of v4's own Dec-2025 figures (which is what `bfwdRetainedEarnings`
+   *  holds): v4 rebases the opening at Jan-2026 by an amount that does not
+   *  reconcile to its prior column. Used only to derive the explicit
+   *  reconciliation line `net_assets_v4_basis` on the BS — it does NOT change
+   *  any modeled balance. */
+  v4ReportedBfwdRetainedEarnings: number;
 }
 
 /** Working-capital assumptions. */
