@@ -30,12 +30,13 @@ function hubspotPlugin(): Plugin {
   return {
     name: 'sales-model-hubspot',
     configureServer(server) {
-      server.middlewares.use('/api/hubspot/sync', async (req, res) => {
+      server.middlewares.use('/api/hubspot/sync', async (_req, res) => {
         try {
           const token = readHubspotToken()
           if (!token) throw new Error('HUBSPOT_API_KEY missing from .env.local')
           const headers = { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }
-          const api = async (path: string, body?: object) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const api = async (path: string, body?: object): Promise<any> => {
             const r = await fetch(`https://api.hubapi.com${path}`, {
               method: body ? 'POST' : 'GET',
               headers,

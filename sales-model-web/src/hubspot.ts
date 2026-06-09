@@ -21,6 +21,20 @@ interface SyncResponse {
   counts: { sales: number; changeOrders: number; lineItems: number };
 }
 
+export interface PerDealLineItem {
+  name: string;
+  unitPrice: number;
+  quantity: number;
+  /** unitPrice × quantity — the pre-discount list value. */
+  listValue: number;
+  /** Discount applied (listValue − value). Positive = discount given. Zero
+   *  when no discount was entered on the HubSpot line item. */
+  discount: number;
+  /** Final billable value (post-discount). Sourced from HubSpot's `amount`
+   *  field on the line item when present, else falls back to `listValue`. */
+  value: number;
+}
+
 export interface PerDealSummary {
   id: string;
   name: string;
@@ -31,10 +45,23 @@ export interface PerDealSummary {
    *  > default. Used to bucket the deal's pipeline value into per-TA
    *  monthly arrays. */
   therapeuticArea: string;
-  /** Sum of (unit_price × quantity) across all line items. */
+  /** Sum of post-discount line-item values (Σ lineItems[i].value). */
   amountReported: number;
-  /** Per-high-level-type sum of (unit_price × quantity). Keys = highLevelType(li.name). */
+  /** Sum of pre-discount list values (Σ lineItems[i].listValue). Equal to
+   *  `amountReported + discountTotal`. */
+  listTotal: number;
+  /** Total discount applied across line items (Σ lineItems[i].discount). */
+  discountTotal: number;
+  /** Raw deal-level `amount` property from HubSpot — the value shown on the
+   *  HubSpot deal record itself. May differ from `amountReported` when the
+   *  HubSpot amount is set manually or when line items are missing/stale. */
+  hubspotAmount: number | null;
+  /** Per-high-level-type sum of post-discount line-item values. Keys =
+   *  highLevelType(li.name). */
   amountByType: Record<string, number>;
+  /** Raw per-line-item rows on this deal — preserved so the Pricing view can
+   *  pivot deals × line items. */
+  lineItems: PerDealLineItem[];
   /** Deal create date as YYYY-MM-DD, or null. */
   createDate: string | null;
   /** Raw HubSpot closedate as YYYY-MM-DD, or null if absent. */
@@ -171,12 +198,27 @@ export function transformDealsToHubSpotData(
     const createDate = parseDate(deal.properties.createdate);
     const lineItemList = deal.lineItems.filter((li) => li.name);
     const amountByType: Record<string, number> = {};
+    const dealLineItems: PerDealLineItem[] = [];
     let amountReported = 0;
+    let listTotal = 0;
+    let discountTotal = 0;
     for (const li of lineItemList) {
-      const v = (parseFloat(li.price ?? '0') || 0) * (parseFloat(li.quantity ?? '0') || 0);
-      amountReported += v;
+      const unitPrice = parseFloat(li.price ?? '0') || 0;
+      const quantity = parseFloat(li.quantity ?? '0') || 0;
+      const listValue = unitPrice * quantity;
+      // HubSpot's `amount` on a line item is the calculated post-discount
+      // total. Prefer it when set; otherwise fall back to list value (no
+      // discount).
+      const rawAmount = li.amount;
+      const parsedAmount = rawAmount != null && rawAmount !== '' ? parseFloat(rawAmount) : NaN;
+      const value = isNaN(parsedAmount) ? listValue : parsedAmount;
+      const discount = listValue - value;
+      amountReported += value;
+      listTotal += listValue;
+      discountTotal += discount;
       const t = highLevelType(li.name!);
-      amountByType[t] = (amountByType[t] || 0) + v;
+      amountByType[t] = (amountByType[t] || 0) + value;
+      dealLineItems.push({ name: li.name!, unitPrice, quantity, listValue, discount, value });
     }
     const isOpenDeal = !!stageLabel && !STAGES_NO_DATE_SHIFT.has(stageLabel);
     const durStr = deal.properties.project_duration__months_;
@@ -196,6 +238,8 @@ export function transformDealsToHubSpotData(
       predictedClose: Date | null,
       skipReason?: string,
     ) => {
+      const rawAmount = deal.properties.amount;
+      const hubspotAmount = rawAmount == null || rawAmount === '' ? null : parseFloat(rawAmount);
       meta.deals.push({
         id: deal.id,
         name: deal.properties.dealname ?? `(deal ${deal.id})`,
@@ -203,7 +247,11 @@ export function transformDealsToHubSpotData(
         stageLabel: stageLabel ?? '(unknown stage)',
         therapeuticArea,
         amountReported,
+        listTotal,
+        discountTotal,
+        hubspotAmount: hubspotAmount != null && isNaN(hubspotAmount) ? null : hubspotAmount,
         amountByType,
+        lineItems: dealLineItems,
         createDate: isoDate(createDate),
         closeDateHubSpot: isoDate(closeDate),
         closeDatePredicted: isoDate(predictedClose),
@@ -250,16 +298,16 @@ export function transformDealsToHubSpotData(
     }
 
     let applied = false;
-    for (const li of lineItemList) {
-      const name = li.name!;
+    // Iterate over the parsed PerDealLineItem rows so the per-month schedule
+    // allocation uses the post-discount value, matching `amountReported`.
+    for (const dli of dealLineItems) {
+      const name = dli.name;
       const schedule = assumptions.paymentSchedules[name];
       if (!schedule) {
         unknownLISet.add(name);
         continue;
       }
-      const unit = parseFloat(li.price ?? '0') || 0;
-      const qty = parseFloat(li.quantity ?? '0') || 0;
-      const totalValue = unit * qty * stageDef.closeProbability;
+      const totalValue = dli.value * stageDef.closeProbability;
       if (totalValue === 0) continue;
 
       const arr = lineItems[name];

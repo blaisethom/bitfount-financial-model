@@ -462,16 +462,61 @@ def extract_depreciation(z, ss) -> list[float]:
         total_row = last_row
     raw = row_to_arr(c, total_row, start_col, 72)
 
-    # v4 hand-overrides Jan/Feb/Mar 2026 in the Budgets sheet (row 23, "Computer")
-    # rather than pulling Capital Purchases via formula for those months. Jan
-    # has a hardcoded formula `-256 * 1.32` (≈$337.92), Feb/Mar are empty cells.
-    # The Apr 2026 onward cells *do* pull from Capital Purchases — so we trust
-    # the Capital Purchases values from Apr 2026 (index 3) onwards and patch
-    # the first three months to match v4's actual budgeted depreciation.
-    raw[0] = 256 * 1.32  # Jan 2026
-    raw[1] = 0.0         # Feb 2026
-    raw[2] = 0.0         # Mar 2026
+    # Budgets!G23 (Jan 2026) uses a hardcoded formula `-256*1.32 = 337.92` instead
+    # of referencing Capital Purchases. Budgets!H23/I23 (Feb/Mar 2026) are empty
+    # (= 0). Only from Apr 2026 (Budgets!J23) does the formula correctly reference
+    # `-Capital Purchases!H155`. This is a bug in the Budgets spreadsheet — the
+    # Jan–Mar cells were never updated to reference the new Capital Purchases rows.
+    # We patch months 0–2 to match Budgets so the model aligns with the spreadsheet.
+    raw[0] = 256 * 1.32   # 337.92 — Budgets!G23 literal
+    raw[1] = 0.0           # Budgets!H23 empty
+    raw[2] = 0.0           # Budgets!I23 empty
     return raw
+
+
+def extract_capex(z, ss) -> list[float]:
+    """Per-month new asset capex from Capital Purchases sheet.
+
+    Each row in the Purchase schedule (rows 5..N) is an asset acquisition
+    whose `Cost` lands in the month it starts depreciating. We find that
+    start month by looking for the first non-zero cell in the matching
+    Amortisation schedule row (purchase row + 83). The "Opening Asset
+    Register" row (row 4) is skipped — it represents pre-model assets
+    already in tangible_assets, not new capex.
+    """
+    c = load_sheet(z, SHEET['Capital Purchases'], ss)
+    amort_hdr = next(
+        (r for r in range(80, 200) if c.get(f'A{r}') == 'Item' and c.get(f'B{r}') == 'Cost'),
+        None,
+    )
+    if amort_hdr is None:
+        raise RuntimeError('Could not find Amortisation schedule header in Capital Purchases')
+    start_col = find_2026_01_col(c, amort_hdr)
+    if start_col is None:
+        raise RuntimeError('Could not find 2026-01 col in Capital Purchases amortisation header')
+
+    capex = [0.0] * 72
+    # Purchase rows: 4 (Opening) and 5..N (real purchases). We skip 4.
+    # Amortisation rows are offset by +83 from purchase rows (verified
+    # against current xlsx — row 4 ↔ row 87 "Opening Asset Register").
+    AMORT_OFFSET = (amort_hdr + 1) - 5  # amort row 87 maps to purchase row 5
+    for prow in range(5, 200):
+        cost = c.get(f'B{prow}')
+        if not isinstance(cost, (int, float)) or cost == 0:
+            # Allow gaps: keep scanning to ~purchase row 84-ish.
+            if prow > amort_hdr - 2:
+                break
+            continue
+        arow = prow + AMORT_OFFSET
+        first_m = None
+        for m in range(72):
+            v = c.get(f'{n_to_col(start_col + m)}{arow}')
+            if isinstance(v, (int, float)) and v != 0:
+                first_m = m
+                break
+        if first_m is not None:
+            capex[first_m] += cost
+    return capex
 
 
 def extract_costs(z, ss):

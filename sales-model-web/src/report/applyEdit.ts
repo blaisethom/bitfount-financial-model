@@ -333,6 +333,14 @@ export function applyEditToInput(input: ModelInput, edit: ReportEdit): ModelInpu
       };
     }
 
+    // ── R&D tax credit per month ────────────────────────────────────────
+    case 'rd_tax_credit_t': {
+      const m = Number(id.month_idx);
+      const arr = [...input.rdTaxCredit];
+      arr[m] = asNumber(edit.value);
+      return { ...input, rdTaxCredit: arr };
+    }
+
     // ── Opening balance sheet (single row) ──────────────────────────────
     case 'opening_bs_t': {
       const key = OPENING_BS_COL_TO_KEY[edit.col];

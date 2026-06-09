@@ -129,6 +129,15 @@ const SCHEMAS = {
     ],
   } satisfies TableSchema,
 
+  // Per-month R&D tax credit (positive = credit received). Booked below
+  // operating profit; flows into profit_after_tax and the cash waterfall.
+  rd_tax_credit: {
+    columns: [
+      { name: 'month_idx', type: 'number' as const },
+      { name: 'value', type: 'number' as const },
+    ],
+  } satisfies TableSchema,
+
   dept_to_tab: {
     columns: [
       { name: 'employee_dept', type: 'string' as const, description: 'Key from Employees tab' },
@@ -522,6 +531,12 @@ export function flattenModelInput(input: ModelInput): FlattenedInput {
   tables.depreciation_t = {
     schema: SCHEMAS.depreciation,
     rows: input.costs.costOfSales.depreciation.map((value, i): Row => ({ month_idx: i, value })),
+  };
+
+  // ─── R&D tax credit (per month) ───
+  tables.rd_tax_credit_t = {
+    schema: SCHEMAS.rd_tax_credit,
+    rows: input.rdTaxCredit.map((value, i): Row => ({ month_idx: i, value })),
   };
 
   // ─── dept to tab mapping (employee_dept → cost_dept) ───

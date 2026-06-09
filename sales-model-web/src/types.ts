@@ -298,6 +298,10 @@ export interface ModelInput {
    *  fully-hardcoded S&M Commission line (72 monthly values from
    *  costs_data.json). */
   salesCommissionOverrides: SalesCommissionOverride[];
+  /** Per-month R&D tax credit received (positive number = credit). Booked
+   *  below operating profit in the P&L (operating_profit + rd_credit =
+   *  profit_after_tax) and flows through to retained earnings + cash. */
+  rdTaxCredit: number[];
 }
 
 export interface PerTypeMonthly {

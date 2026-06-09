@@ -28,6 +28,7 @@ export const SOURCE_IDENTITY: Record<string, string[]> = {
   commission_t: [],
   cost_line_items_t: ['dept', 'line_name', 'month_idx'],
   depreciation_t: ['month_idx'],
+  rd_tax_credit_t: ['month_idx'],
   dept_to_tab_t: ['employee_dept'],
   // Balance Sheet inputs (single-row assumption tables)
   opening_bs_t: [],

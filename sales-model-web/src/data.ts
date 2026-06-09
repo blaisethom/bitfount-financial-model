@@ -85,16 +85,17 @@ export function defaultHubSpotSyncAssumptions(): HubSpotSyncAssumptions {
           ta: 'Ophthalmology',
           note: 'Ophthalmology catch-all: AMD subtypes, GA, diabetic retinopathy/DME, glaucoma, cataract, OCT/fundus imaging, retinal studies',
         },
-        // Non-ophthalmology examples (commented out — uncomment / edit when
-        // additional TAs come online):
+        // Hepatology — liver / MASH / NASH deals
+        { pattern: '\\b(liver|mash|hepatic|nash)\\b', ta: 'TA3', note: 'Hepatology' },
+        // Other non-ophthalmology examples (commented out — uncomment / edit
+        // when additional TAs come online):
         // { pattern: '\\b(alzheimer|psychosis|psychiatry|adept)\\b', ta: 'TA2', note: 'Neuro / psychiatry' },
-        // { pattern: '\\b(liver|mash|hepatic|nash)\\b',              ta: 'TA3', note: 'Hepatology' },
         // { pattern: '\\b(ckd|kidney|renal)\\b',                    ta: 'TA4', note: 'Nephrology' },
         // { pattern: '\\b(ms\\b|ppms|multiple\\s*sclerosis)\\b',    ta: 'TA5', note: 'Neurology / MS' },
       ],
-      // Fallback for unmatched deals. Today everything is ophthalmology-ish,
-      // so the safe default is Ophthalmology.
-      defaultTA: 'Ophthalmology',
+      // Fallback for unmatched deals — explicit "Unallocated" bucket so they
+      // surface in the deal list rather than silently rolling into Ophthalmology.
+      defaultTA: 'Unallocated',
       perDeal: {},
     },
   };
@@ -167,7 +168,7 @@ export function loadInitialInput(): ModelInput {
   // is reset to zero at the forecast start. No `otherReserve` plug needed —
   // BFWD = -$11,534,167 makes Net Assets = Total Equity exactly at t=0.
   const openingBs: OpeningBalanceSheet = {
-    openingCash: 1_114_772,
+    openingCash: 1_112_772,
     openingTangibleAssets: 45_635,
     openingIntangibleAssets: 0,
     openingTradeDebtors: 119_540,
@@ -180,7 +181,7 @@ export function loadInitialInput(): ModelInput {
     shareCapital: 246,
     sharePremium: 12_316_680,
     otherReserve: 0,
-    bfwdRetainedEarnings: -11_534_167,
+    bfwdRetainedEarnings: -11_536_167,
   };
 
   const bsAssumptions: BalanceSheetAssumptions = {
@@ -195,78 +196,78 @@ export function loadInitialInput(): ModelInput {
   // Trade Creditors / Other Debtors / VAT / Other Creditors: actual v4
   // monthly closing balances from Budgets rows 78 / 73 / 74 / 80.
   const bsMonthlySchedule: BalanceSheetMonthlySchedule[] = [
-    { monthIdx: 0, capex: 11947.81, loanRepayment: 0, tradeCreditors: -38925.81, otherDebtors: 6400.00, vat: 8773.87, otherCreditors: -42164.87 },
-    { monthIdx: 1, capex: 5747.81, loanRepayment: 0, tradeCreditors: -44229.81, otherDebtors: 12800.00, vat: 13075.87, otherCreditors: -146466.87 },
-    { monthIdx: 2, capex: 6747.81, loanRepayment: 0, tradeCreditors: -56625.81, otherDebtors: 19200.00, vat: 17839.87, otherCreditors: -251230.87 },
-    { monthIdx: 3, capex: 7747.81, loanRepayment: 0, tradeCreditors: -93669.81, otherDebtors: 25600.00, vat: 8516.00, otherCreditors: -447907.00 },
-    { monthIdx: 4, capex: 7747.81, loanRepayment: 0, tradeCreditors: -43605.81, otherDebtors: 32000.00, vat: 12480.00, otherCreditors: -451871.00 },
-    { monthIdx: 5, capex: 7747.81, loanRepayment: 0, tradeCreditors: -117717.81, otherDebtors: 60000.00, vat: 15542.00, otherCreditors: -454933.00 },
-    { monthIdx: 6, capex: 7747.81, loanRepayment: 0, tradeCreditors: -67605.81, otherDebtors: 60000.00, vat: 4416.00, otherCreditors: -426640.33 },
-    { monthIdx: 7, capex: 7747.81, loanRepayment: 0, tradeCreditors: -34005.81, otherDebtors: 60000.00, vat: 5331.40, otherCreditors: -410389.07 },
-    { monthIdx: 8, capex: 7747.81, loanRepayment: 0, tradeCreditors: -58065.81, otherDebtors: 60000.00, vat: 9118.40, otherCreditors: -342509.40 },
-    { monthIdx: 9, capex: 7747.81, loanRepayment: 12000, tradeCreditors: -58185.81, otherDebtors: 60000.00, vat: 7869.00, otherCreditors: -341260.00 },
-    { monthIdx: 10, capex: 7747.81, loanRepayment: 12000, tradeCreditors: -34185.81, otherDebtors: 60000.00, vat: 8531.00, otherCreditors: -341922.00 },
-    { monthIdx: 11, capex: 7747.81, loanRepayment: 12000, tradeCreditors: -46185.81, otherDebtors: 60000.00, vat: 8673.00, otherCreditors: -342064.00 },
-    { monthIdx: 12, capex: 10247.81, loanRepayment: 12000, tradeCreditors: -160301.61, otherDebtors: 128750.00, vat: 10046.48, otherCreditors: -343437.48 },
-    { monthIdx: 13, capex: 11081.14, loanRepayment: 12000, tradeCreditors: -154301.61, otherDebtors: 145416.67, vat: 14239.43, otherCreditors: -347630.43 },
-    { monthIdx: 14, capex: 11914.48, loanRepayment: 12000, tradeCreditors: -119561.61, otherDebtors: 160000.00, vat: 22415.84, otherCreditors: -355806.84 },
-    { monthIdx: 15, capex: 282747.81, loanRepayment: 12000, tradeCreditors: -375401.61, otherDebtors: 343516.67, vat: 18421.84, otherCreditors: -351812.84 },
-    { monthIdx: 16, capex: 43581.14, loanRepayment: 12000, tradeCreditors: -389081.61, otherDebtors: 317833.33, vat: 36465.19, otherCreditors: -369856.19 },
-    { monthIdx: 17, capex: 65247.81, loanRepayment: 12000, tradeCreditors: -155741.61, otherDebtors: 313750.00, vat: 50814.35, otherCreditors: -384205.35 },
-    { monthIdx: 18, capex: 46081.14, loanRepayment: 12000, tradeCreditors: -130061.61, otherDebtors: 304583.33, vat: 22799.68, otherCreditors: -356190.68 },
-    { monthIdx: 19, capex: 26081.14, loanRepayment: 12000, tradeCreditors: -96461.61, otherDebtors: 270416.67, vat: 28098.53, otherCreditors: -361489.53 },
-    { monthIdx: 20, capex: 46914.48, loanRepayment: 12000, tradeCreditors: -168461.61, otherDebtors: 259166.67, vat: 44965.29, otherCreditors: -378356.29 },
-    { monthIdx: 21, capex: 47747.81, loanRepayment: 12000, tradeCreditors: -152981.61, otherDebtors: 245833.33, vat: 28302.70, otherCreditors: -361693.70 },
-    { monthIdx: 22, capex: 27747.81, loanRepayment: 12000, tradeCreditors: -98981.61, otherDebtors: 207500.00, vat: 34692.38, otherCreditors: -368083.38 },
-    { monthIdx: 23, capex: 27747.81, loanRepayment: 12000, tradeCreditors: -80981.61, otherDebtors: 169166.67, vat: 37930.40, otherCreditors: -371321.40 },
-    { monthIdx: 24, capex: 64666.67, loanRepayment: 12000, tradeCreditors: -189640.20, otherDebtors: 201666.67, vat: 14376.12, otherCreditors: -347767.12 },
-    { monthIdx: 25, capex: 44500.00, loanRepayment: 12000, tradeCreditors: -313120.20, otherDebtors: 282083.33, vat: 20203.39, otherCreditors: -353594.39 },
-    { monthIdx: 26, capex: 65166.67, loanRepayment: 12000, tradeCreditors: -397180.20, otherDebtors: 308333.33, vat: 35023.58, otherCreditors: -368414.58 },
-    { monthIdx: 27, capex: 65833.33, loanRepayment: 1680, tradeCreditors: -373180.20, otherDebtors: 430416.67, vat: 20890.38, otherCreditors: -354281.38 },
-    { monthIdx: 28, capex: 46666.67, loanRepayment: 0, tradeCreditors: -489580.20, otherDebtors: 547416.67, vat: 23606.82, otherCreditors: -356997.82 },
-    { monthIdx: 29, capex: 47500.00, loanRepayment: 0, tradeCreditors: -409300.20, otherDebtors: 568333.33, vat: 31951.17, otherCreditors: -365342.17 },
-    { monthIdx: 30, capex: 69166.67, loanRepayment: 0, tradeCreditors: -281020.20, otherDebtors: 582083.33, vat: 17333.29, otherCreditors: -350724.29 },
-    { monthIdx: 31, capex: 50000.00, loanRepayment: 0, tradeCreditors: -253420.20, otherDebtors: 593750.00, vat: 20981.40, otherCreditors: -354372.40 },
-    { monthIdx: 32, capex: 50833.33, loanRepayment: 0, tradeCreditors: -355420.20, otherDebtors: 628333.33, vat: 35339.92, otherCreditors: -368730.92 },
-    { monthIdx: 33, capex: 280833.33, loanRepayment: 0, tradeCreditors: -463420.20, otherDebtors: 774583.33, vat: 21566.21, otherCreditors: -354957.21 },
-    { monthIdx: 34, capex: 145000.00, loanRepayment: 0, tradeCreditors: -403420.20, otherDebtors: 735416.67, vat: 27444.31, otherCreditors: -360835.32 },
-    { monthIdx: 35, capex: 45000.00, loanRepayment: 0, tradeCreditors: -175420.20, otherDebtors: 669166.67, vat: 36605.75, otherCreditors: -369996.75 },
-    { monthIdx: 36, capex: 313333.33, loanRepayment: 0, tradeCreditors: -209699.72, otherDebtors: 652916.67, vat: 20185.34, otherCreditors: -353576.34 },
-    { monthIdx: 37, capex: 156666.67, loanRepayment: 0, tradeCreditors: -497699.72, otherDebtors: 821250.00, vat: 30187.17, otherCreditors: -363578.17 },
-    { monthIdx: 38, capex: 285000.00, loanRepayment: 0, tradeCreditors: -551759.72, otherDebtors: 804166.67, vat: 46377.74, otherCreditors: -379768.74 },
-    { monthIdx: 39, capex: 116666.67, loanRepayment: 0, tradeCreditors: -407759.72, otherDebtors: 846666.67, vat: 30859.06, otherCreditors: -364250.06 },
-    { monthIdx: 40, capex: 80833.33, loanRepayment: 0, tradeCreditors: -494159.72, otherDebtors: 884083.33, vat: 48099.63, otherCreditors: -381490.63 },
-    { monthIdx: 41, capex: 80166.67, loanRepayment: 0, tradeCreditors: -389759.72, otherDebtors: 827500.00, vat: 63184.79, otherCreditors: -396575.79 },
-    { monthIdx: 42, capex: 80333.33, loanRepayment: 0, tradeCreditors: -303419.72, otherDebtors: 790833.33, vat: 33536.98, otherCreditors: -366927.98 },
-    { monthIdx: 43, capex: 81333.33, loanRepayment: 0, tradeCreditors: -347819.72, otherDebtors: 765833.33, vat: 51255.47, otherCreditors: -384646.47 },
-    { monthIdx: 44, capex: 56500.00, loanRepayment: 0, tradeCreditors: -389819.72, otherDebtors: 740833.33, vat: 69813.96, otherCreditors: -403204.96 },
-    { monthIdx: 45, capex: 55666.67, loanRepayment: 0, tradeCreditors: -497819.72, otherDebtors: 815833.33, vat: 35071.56, otherCreditors: -368462.56 },
-    { monthIdx: 46, capex: 55666.67, loanRepayment: 0, tradeCreditors: -407819.72, otherDebtors: 715833.33, vat: 51134.63, otherCreditors: -384525.63 },
-    { monthIdx: 47, capex: 55666.67, loanRepayment: 0, tradeCreditors: -179819.72, otherDebtors: 590833.33, vat: 65992.29, otherCreditors: -399383.29 },
-    { monthIdx: 48, capex: 54000.00, loanRepayment: 0, tradeCreditors: -292250.21, otherDebtors: 590833.33, vat: 31094.47, otherCreditors: -364485.47 },
-    { monthIdx: 49, capex: 53166.67, loanRepayment: 0, tradeCreditors: -562250.21, otherDebtors: 690833.33, vat: 46881.28, otherCreditors: -380272.28 },
-    { monthIdx: 50, capex: 51500.00, loanRepayment: 0, tradeCreditors: -574250.21, otherDebtors: 690833.33, vat: 63118.09, otherCreditors: -396509.09 },
-    { monthIdx: 51, capex: 49833.33, loanRepayment: 0, tradeCreditors: -472250.21, otherDebtors: 715833.33, vat: 31523.62, otherCreditors: -364914.62 },
-    { monthIdx: 52, capex: 111500.00, loanRepayment: 0, tradeCreditors: -588650.21, otherDebtors: 812833.33, vat: 44705.01, otherCreditors: -378096.01 },
-    { monthIdx: 53, capex: 71500.00, loanRepayment: 0, tradeCreditors: -514250.21, otherDebtors: 765833.33, vat: 58336.41, otherCreditors: -391727.41 },
-    { monthIdx: 54, capex: 70666.67, loanRepayment: 0, tradeCreditors: -325850.21, otherDebtors: 715833.33, vat: 25607.37, otherCreditors: -358998.37 },
-    { monthIdx: 55, capex: 320666.67, loanRepayment: 0, tradeCreditors: -292250.21, otherDebtors: 640833.33, vat: 37133.35, otherCreditors: -370524.35 },
-    { monthIdx: 56, capex: 80666.67, loanRepayment: 0, tradeCreditors: -394250.21, otherDebtors: 665833.33, vat: 49259.32, otherCreditors: -382650.32 },
-    { monthIdx: 57, capex: 92333.33, loanRepayment: 0, tradeCreditors: -592250.21, otherDebtors: 765833.33, vat: 24201.95, otherCreditors: -357592.95 },
-    { monthIdx: 58, capex: 69000.00, loanRepayment: 0, tradeCreditors: -442250.21, otherDebtors: 665833.33, vat: 35827.93, otherCreditors: -369218.93 },
-    { monthIdx: 59, capex: 49000.00, loanRepayment: 0, tradeCreditors: -184250.21, otherDebtors: 540833.33, vat: 47903.91, otherCreditors: -381294.91 },
-    { monthIdx: 60, capex: 49000.00, loanRepayment: 0, tradeCreditors: -304850.21, otherDebtors: 540833.33, vat: 60929.88, otherCreditors: -394320.88 },
-    { monthIdx: 61, capex: 49000.00, loanRepayment: 0, tradeCreditors: -544850.21, otherDebtors: 615833.33, vat: 73505.86, otherCreditors: -406896.86 },
-    { monthIdx: 62, capex: 49000.00, loanRepayment: 0, tradeCreditors: -574850.21, otherDebtors: 640833.33, vat: 85224.33, otherCreditors: -418615.33 },
-    { monthIdx: 63, capex: 49000.00, loanRepayment: 0, tradeCreditors: -514850.21, otherDebtors: 665833.33, vat: 96942.81, otherCreditors: -430333.81 },
-    { monthIdx: 64, capex: 49000.00, loanRepayment: 0, tradeCreditors: -544850.21, otherDebtors: 715833.33, vat: 112124.20, otherCreditors: -445515.20 },
-    { monthIdx: 65, capex: 49000.00, loanRepayment: 0, tradeCreditors: -484850.21, otherDebtors: 690833.33, vat: 125236.85, otherCreditors: -458627.85 },
-    { monthIdx: 66, capex: 49000.00, loanRepayment: 0, tradeCreditors: -394850.21, otherDebtors: 665833.33, vat: 138799.49, otherCreditors: -472190.49 },
-    { monthIdx: 67, capex: 49000.00, loanRepayment: 0, tradeCreditors: -334850.21, otherDebtors: 590833.33, vat: 155136.30, otherCreditors: -488527.30 },
-    { monthIdx: 68, capex: 49000.00, loanRepayment: 0, tradeCreditors: -394850.21, otherDebtors: 615833.33, vat: 169556.44, otherCreditors: -502947.44 },
-    { monthIdx: 69, capex: 49000.00, loanRepayment: 0, tradeCreditors: -604850.21, otherDebtors: 715833.33, vat: 184774.50, otherCreditors: -518165.50 },
-    { monthIdx: 70, capex: 49000.00, loanRepayment: 0, tradeCreditors: -454850.21, otherDebtors: 615833.33, vat: 200161.31, otherCreditors: -533552.31 },
-    { monthIdx: 71, capex: 49000.00, loanRepayment: 0, tradeCreditors: -184850.21, otherDebtors: 490833.33, vat: 218842.29, otherCreditors: -552233.29 },
+    { monthIdx: 0, capex: 12000.00, loanRepayment: 0, tradeCreditors: -38925.81, otherDebtors: 6400.00, vat: 8773.87, otherCreditors: -42164.87 },
+    { monthIdx: 1, capex: 12000.00, loanRepayment: 0, tradeCreditors: -44229.81, otherDebtors: 12800.00, vat: 13075.87, otherCreditors: -146466.87 },
+    { monthIdx: 2, capex: 12000.00, loanRepayment: 0, tradeCreditors: -56625.81, otherDebtors: 19200.00, vat: 17839.87, otherCreditors: -251230.87 },
+    { monthIdx: 3, capex: 12000.00, loanRepayment: 0, tradeCreditors: -93669.81, otherDebtors: 25600.00, vat: 8516.00, otherCreditors: -447907.00 },
+    { monthIdx: 4, capex: 0.00, loanRepayment: 0, tradeCreditors: -43605.81, otherDebtors: 32000.00, vat: 12480.00, otherCreditors: -451871.00 },
+    { monthIdx: 5, capex: 0.00, loanRepayment: 0, tradeCreditors: -117717.81, otherDebtors: 60000.00, vat: 15542.00, otherCreditors: -454933.00 },
+    { monthIdx: 6, capex: 0.00, loanRepayment: 0, tradeCreditors: -67605.81, otherDebtors: 60000.00, vat: 4416.00, otherCreditors: -426640.33 },
+    { monthIdx: 7, capex: 0.00, loanRepayment: 0, tradeCreditors: -34005.81, otherDebtors: 60000.00, vat: 5331.40, otherCreditors: -410389.07 },
+    { monthIdx: 8, capex: 0.00, loanRepayment: 0, tradeCreditors: -58065.81, otherDebtors: 60000.00, vat: 9118.40, otherCreditors: -342509.40 },
+    { monthIdx: 9, capex: 0.00, loanRepayment: 12000, tradeCreditors: -58185.81, otherDebtors: 60000.00, vat: 7869.00, otherCreditors: -341260.00 },
+    { monthIdx: 10, capex: 0.00, loanRepayment: 12000, tradeCreditors: -34185.81, otherDebtors: 60000.00, vat: 8531.00, otherCreditors: -341922.00 },
+    { monthIdx: 11, capex: 0.00, loanRepayment: 12000, tradeCreditors: -46185.81, otherDebtors: 60000.00, vat: 8673.00, otherCreditors: -342064.00 },
+    { monthIdx: 12, capex: 30000.00, loanRepayment: 12000, tradeCreditors: -160301.61, otherDebtors: 128750.00, vat: 10046.48, otherCreditors: -343437.48 },
+    { monthIdx: 13, capex: 10000.00, loanRepayment: 12000, tradeCreditors: -154301.61, otherDebtors: 145416.67, vat: 14239.43, otherCreditors: -347630.43 },
+    { monthIdx: 14, capex: 10000.00, loanRepayment: 12000, tradeCreditors: -119561.61, otherDebtors: 160000.00, vat: 22415.84, otherCreditors: -355806.84 },
+    { monthIdx: 15, capex: 130000.00, loanRepayment: 12000, tradeCreditors: -375401.61, otherDebtors: 343516.67, vat: 18421.84, otherCreditors: -351812.84 },
+    { monthIdx: 16, capex: 10000.00, loanRepayment: 12000, tradeCreditors: -389081.61, otherDebtors: 317833.33, vat: 36465.19, otherCreditors: -369856.19 },
+    { monthIdx: 17, capex: 20000.00, loanRepayment: 12000, tradeCreditors: -155741.61, otherDebtors: 313750.00, vat: 50814.35, otherCreditors: -384205.35 },
+    { monthIdx: 18, capex: 10000.00, loanRepayment: 12000, tradeCreditors: -130061.61, otherDebtors: 304583.33, vat: 22799.68, otherCreditors: -356190.68 },
+    { monthIdx: 19, capex: 0.00, loanRepayment: 12000, tradeCreditors: -96461.61, otherDebtors: 270416.67, vat: 28098.53, otherCreditors: -361489.53 },
+    { monthIdx: 20, capex: 10000.00, loanRepayment: 12000, tradeCreditors: -168461.61, otherDebtors: 259166.67, vat: 44965.29, otherCreditors: -378356.29 },
+    { monthIdx: 21, capex: 10000.00, loanRepayment: 12000, tradeCreditors: -152981.61, otherDebtors: 245833.33, vat: 28302.70, otherCreditors: -361693.70 },
+    { monthIdx: 22, capex: 0.00, loanRepayment: 12000, tradeCreditors: -98981.61, otherDebtors: 207500.00, vat: 34692.38, otherCreditors: -368083.38 },
+    { monthIdx: 23, capex: 0.00, loanRepayment: 12000, tradeCreditors: -80981.61, otherDebtors: 169166.67, vat: 37930.40, otherCreditors: -371321.40 },
+    { monthIdx: 24, capex: 20000.00, loanRepayment: 12000, tradeCreditors: -189640.20, otherDebtors: 201666.67, vat: 14376.12, otherCreditors: -347767.12 },
+    { monthIdx: 25, capex: 10000.00, loanRepayment: 12000, tradeCreditors: -313120.20, otherDebtors: 282083.33, vat: 20203.39, otherCreditors: -353594.39 },
+    { monthIdx: 26, capex: 20000.00, loanRepayment: 12000, tradeCreditors: -397180.20, otherDebtors: 308333.33, vat: 35023.58, otherCreditors: -368414.58 },
+    { monthIdx: 27, capex: 20000.00, loanRepayment: 1680, tradeCreditors: -373180.20, otherDebtors: 430416.67, vat: 20890.38, otherCreditors: -354281.38 },
+    { monthIdx: 28, capex: 10000.00, loanRepayment: 0, tradeCreditors: -489580.20, otherDebtors: 547416.67, vat: 23606.82, otherCreditors: -356997.82 },
+    { monthIdx: 29, capex: 10000.00, loanRepayment: 0, tradeCreditors: -409300.20, otherDebtors: 568333.33, vat: 31951.17, otherCreditors: -365342.17 },
+    { monthIdx: 30, capex: 20000.00, loanRepayment: 0, tradeCreditors: -281020.20, otherDebtors: 582083.33, vat: 17333.29, otherCreditors: -350724.29 },
+    { monthIdx: 31, capex: 10000.00, loanRepayment: 0, tradeCreditors: -253420.20, otherDebtors: 593750.00, vat: 20981.40, otherCreditors: -354372.40 },
+    { monthIdx: 32, capex: 10000.00, loanRepayment: 0, tradeCreditors: -355420.20, otherDebtors: 628333.33, vat: 35339.92, otherCreditors: -368730.92 },
+    { monthIdx: 33, capex: 120000.00, loanRepayment: 0, tradeCreditors: -463420.20, otherDebtors: 774583.33, vat: 21566.21, otherCreditors: -354957.21 },
+    { monthIdx: 34, capex: 50000.00, loanRepayment: 0, tradeCreditors: -403420.20, otherDebtors: 735416.67, vat: 27444.31, otherCreditors: -360835.32 },
+    { monthIdx: 35, capex: 0.00, loanRepayment: 0, tradeCreditors: -175420.20, otherDebtors: 669166.67, vat: 36605.75, otherCreditors: -369996.75 },
+    { monthIdx: 36, capex: 130000.00, loanRepayment: 0, tradeCreditors: -209699.72, otherDebtors: 652916.67, vat: 20185.34, otherCreditors: -353576.34 },
+    { monthIdx: 37, capex: 50000.00, loanRepayment: 0, tradeCreditors: -497699.72, otherDebtors: 821250.00, vat: 30187.17, otherCreditors: -363578.17 },
+    { monthIdx: 38, capex: 110000.00, loanRepayment: 0, tradeCreditors: -551759.72, otherDebtors: 804166.67, vat: 46377.74, otherCreditors: -379768.74 },
+    { monthIdx: 39, capex: 30000.00, loanRepayment: 0, tradeCreditors: -407759.72, otherDebtors: 846666.67, vat: 30859.06, otherCreditors: -364250.06 },
+    { monthIdx: 40, capex: 12000.00, loanRepayment: 0, tradeCreditors: -494159.72, otherDebtors: 884083.33, vat: 48099.63, otherCreditors: -381490.63 },
+    { monthIdx: 41, capex: 12000.00, loanRepayment: 0, tradeCreditors: -389759.72, otherDebtors: 827500.00, vat: 63184.79, otherCreditors: -396575.79 },
+    { monthIdx: 42, capex: 12000.00, loanRepayment: 0, tradeCreditors: -303419.72, otherDebtors: 790833.33, vat: 33536.98, otherCreditors: -366927.98 },
+    { monthIdx: 43, capex: 12000.00, loanRepayment: 0, tradeCreditors: -347819.72, otherDebtors: 765833.33, vat: 51255.47, otherCreditors: -384646.47 },
+    { monthIdx: 44, capex: 0.00, loanRepayment: 0, tradeCreditors: -389819.72, otherDebtors: 740833.33, vat: 69813.96, otherCreditors: -403204.96 },
+    { monthIdx: 45, capex: 0.00, loanRepayment: 0, tradeCreditors: -497819.72, otherDebtors: 815833.33, vat: 35071.56, otherCreditors: -368462.56 },
+    { monthIdx: 46, capex: 0.00, loanRepayment: 0, tradeCreditors: -407819.72, otherDebtors: 715833.33, vat: 51134.63, otherCreditors: -384525.63 },
+    { monthIdx: 47, capex: 0.00, loanRepayment: 0, tradeCreditors: -179819.72, otherDebtors: 590833.33, vat: 65992.29, otherCreditors: -399383.29 },
+    { monthIdx: 48, capex: 0.00, loanRepayment: 0, tradeCreditors: -292250.21, otherDebtors: 590833.33, vat: 31094.47, otherCreditors: -364485.47 },
+    { monthIdx: 49, capex: 0.00, loanRepayment: 0, tradeCreditors: -562250.21, otherDebtors: 690833.33, vat: 46881.28, otherCreditors: -380272.28 },
+    { monthIdx: 50, capex: 0.00, loanRepayment: 0, tradeCreditors: -574250.21, otherDebtors: 690833.33, vat: 63118.09, otherCreditors: -396509.09 },
+    { monthIdx: 51, capex: 0.00, loanRepayment: 0, tradeCreditors: -472250.21, otherDebtors: 715833.33, vat: 31523.62, otherCreditors: -364914.62 },
+    { monthIdx: 52, capex: 30000.00, loanRepayment: 0, tradeCreditors: -588650.21, otherDebtors: 812833.33, vat: 44705.01, otherCreditors: -378096.01 },
+    { monthIdx: 53, capex: 10000.00, loanRepayment: 0, tradeCreditors: -514250.21, otherDebtors: 765833.33, vat: 58336.41, otherCreditors: -391727.41 },
+    { monthIdx: 54, capex: 10000.00, loanRepayment: 0, tradeCreditors: -325850.21, otherDebtors: 715833.33, vat: 25607.37, otherCreditors: -358998.37 },
+    { monthIdx: 55, capex: 130000.00, loanRepayment: 0, tradeCreditors: -292250.21, otherDebtors: 640833.33, vat: 37133.35, otherCreditors: -370524.35 },
+    { monthIdx: 56, capex: 10000.00, loanRepayment: 0, tradeCreditors: -394250.21, otherDebtors: 665833.33, vat: 49259.32, otherCreditors: -382650.32 },
+    { monthIdx: 57, capex: 20000.00, loanRepayment: 0, tradeCreditors: -592250.21, otherDebtors: 765833.33, vat: 24201.95, otherCreditors: -357592.95 },
+    { monthIdx: 58, capex: 10000.00, loanRepayment: 0, tradeCreditors: -442250.21, otherDebtors: 665833.33, vat: 35827.93, otherCreditors: -369218.93 },
+    { monthIdx: 59, capex: 0.00, loanRepayment: 0, tradeCreditors: -184250.21, otherDebtors: 540833.33, vat: 47903.91, otherCreditors: -381294.91 },
+    { monthIdx: 60, capex: 0.00, loanRepayment: 0, tradeCreditors: -304850.21, otherDebtors: 540833.33, vat: 60929.88, otherCreditors: -394320.88 },
+    { monthIdx: 61, capex: 0.00, loanRepayment: 0, tradeCreditors: -544850.21, otherDebtors: 615833.33, vat: 73505.86, otherCreditors: -406896.86 },
+    { monthIdx: 62, capex: 0.00, loanRepayment: 0, tradeCreditors: -574850.21, otherDebtors: 640833.33, vat: 85224.33, otherCreditors: -418615.33 },
+    { monthIdx: 63, capex: 0.00, loanRepayment: 0, tradeCreditors: -514850.21, otherDebtors: 665833.33, vat: 96942.81, otherCreditors: -430333.81 },
+    { monthIdx: 64, capex: 0.00, loanRepayment: 0, tradeCreditors: -544850.21, otherDebtors: 715833.33, vat: 112124.20, otherCreditors: -445515.20 },
+    { monthIdx: 65, capex: 0.00, loanRepayment: 0, tradeCreditors: -484850.21, otherDebtors: 690833.33, vat: 125236.85, otherCreditors: -458627.85 },
+    { monthIdx: 66, capex: 0.00, loanRepayment: 0, tradeCreditors: -394850.21, otherDebtors: 665833.33, vat: 138799.49, otherCreditors: -472190.49 },
+    { monthIdx: 67, capex: 0.00, loanRepayment: 0, tradeCreditors: -334850.21, otherDebtors: 590833.33, vat: 155136.30, otherCreditors: -488527.30 },
+    { monthIdx: 68, capex: 0.00, loanRepayment: 0, tradeCreditors: -394850.21, otherDebtors: 615833.33, vat: 169556.44, otherCreditors: -502947.44 },
+    { monthIdx: 69, capex: 0.00, loanRepayment: 0, tradeCreditors: -604850.21, otherDebtors: 715833.33, vat: 184774.50, otherCreditors: -518165.50 },
+    { monthIdx: 70, capex: 0.00, loanRepayment: 0, tradeCreditors: -454850.21, otherDebtors: 615833.33, vat: 200161.31, otherCreditors: -533552.31 },
+    { monthIdx: 71, capex: 0.00, loanRepayment: 0, tradeCreditors: -184850.21, otherDebtors: 490833.33, vat: 218842.29, otherCreditors: -552233.29 },
   ];
 
   // Per-employee monthly cost adjustments. Pre-populated with the two
@@ -368,6 +369,14 @@ export function loadInitialInput(): ModelInput {
   // these months (matching Employees!L51), so we pre-populate staff actuals to
   // match v4's adjusted values. The per-dept total auto-recomputes
   // (staff_actual + non_staff_modelled + derived_modelled) to match v4 G&A!*27.
+  // R&D tax credit per month. v4 books the full annual credit in a single month
+  // (April of each year). 2026 is $0 in v4 (the previously-used $437k was from
+  // an older spreadsheet version). Apr 2027 (month 15) and Apr 2028 (month 27)
+  // each receive the $330k credit as a lump sum (Budgets!row 53).
+  const rdTaxCredit: number[] = new Array(dates.length).fill(0);
+  rdTaxCredit[15] = 330_000; // Apr 2027
+  rdTaxCredit[27] = 330_000; // Apr 2028
+
   const actuals: Actuals = {
     pnlMonthly: {},
     costDeptMonthly: {
@@ -402,6 +411,7 @@ export function loadInitialInput(): ModelInput {
     revenueAdjustments,
     modellerCommissionAdjustments,
     salesCommissionOverrides,
+    rdTaxCredit,
   };
 }
 

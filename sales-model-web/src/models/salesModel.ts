@@ -21,7 +21,7 @@
 
 import {
   defineModel, manual, sequence, step, ops, agg,
-  col, lit, add, sub, mul, div, lt, le, ge, eq, ne, and, or, iff, min as minFn, max as maxFn, pow,
+  col, lit, add, sub, mul, div, lt, le, ge, eq, ne, and, or, iff, min as minFn, pow,
   year, month, floor, mod, concat,
 } from '../engine';
 import { FLATTEN_SCHEMAS as S } from './flatten';
@@ -158,8 +158,18 @@ export const salesModel = defineModel({
       schema: S.depreciation,
       defaults: [],
       description:
-        'Capital depreciation per month (cost of sales). Sourced from the ' +
-        'Capital Purchases sheet in the underlying spreadsheet.',
+        'Capital depreciation per month. Booked below operating profit ' +
+        '(operating_profit = ebitda − depreciation) to match v4\'s P&L ' +
+        'layout. Also drives Tangible Assets writedown.',
+    }),
+    rd_tax_credit_t: manual({
+      schema: S.rd_tax_credit,
+      defaults: [],
+      description:
+        'R&D tax credit received per month (positive = credit). Added below ' +
+        'operating profit: profit_after_tax = operating_profit + rd_credit. ' +
+        'Defaults reproduce v4 ($437k 2026, $330k 2027, $330k 2028) smoothed ' +
+        'evenly across each year.',
     }),
     dept_to_tab_t: manual({
       schema: S.dept_to_tab,
@@ -1016,32 +1026,19 @@ export const salesModel = defineModel({
       output: 'rev_with_modeller_commission',
     }),
     step({
-      id: 'rev_with_depreciation',
-      name: 'Join with depreciation per month',
-      description: 'Capital depreciation is a fixed per-month cost of sales line.',
-      input: 'rev_with_modeller_commission',
-      op: ops.join('depreciation_t', [{ left: 'month_idx', right: 'month_idx' }], 'left'),
-      output: 'rev_with_depreciation',
-    }),
-    step({
       id: 'budget_with_cos_gp',
       name: 'Cost of sales + gross profit per month',
       description:
-        'cost_of_sales = modeller_commission + depreciation; gross_profit = revenue - cost_of_sales.',
-      input: 'rev_with_depreciation',
+        'cost_of_sales = modeller_commission; gross_profit = revenue - cost_of_sales. ' +
+        'Depreciation is booked below EBITDA (operating_profit step) rather than ' +
+        'inside COGS — matches v4\'s Budgets-sheet layout.',
+      input: 'rev_with_modeller_commission',
       op: ops.map({
         modeller_commission: iff(eq(col('modeller_commission'), lit(null)), lit(0), col('modeller_commission')),
-        depreciation: iff(eq(col('value'), lit(null)), lit(0), col('value')),
-        cost_of_sales: add(
-          iff(eq(col('modeller_commission'), lit(null)), lit(0), col('modeller_commission')),
-          iff(eq(col('value'), lit(null)), lit(0), col('value')),
-        ),
+        cost_of_sales: iff(eq(col('modeller_commission'), lit(null)), lit(0), col('modeller_commission')),
         gross_profit: sub(
           col('revenue'),
-          add(
-            iff(eq(col('modeller_commission'), lit(null)), lit(0), col('modeller_commission')),
-            iff(eq(col('value'), lit(null)), lit(0), col('value')),
-          ),
+          iff(eq(col('modeller_commission'), lit(null)), lit(0), col('modeller_commission')),
         ),
       }),
       output: 'budget_with_cos_gp',
@@ -1139,12 +1136,70 @@ export const salesModel = defineModel({
       output: 'budget_monthly_with_actuals',
     }),
 
+    // ─── Below EBITDA: operating profit + R&D tax credit + profit after tax ─
+    // Match v4's P&L layout: depreciation sits below EBITDA, then the R&D tax
+    // credit is added on top of operating profit to get profit after tax. The
+    // remaining v4 P&L lines (other income / interest / corp tax) are zero or
+    // immaterial in the forecast — see the report section for the breakdown.
+    step({
+      id: 'budget_with_dep_join',
+      name: 'Join overridden monthly P&L with depreciation',
+      description: 'Bring per-month depreciation onto each row to compute operating_profit.',
+      input: 'budget_monthly_with_actuals',
+      op: ops.join('depreciation_t', [{ left: 'month_idx', right: 'month_idx' }], 'left'),
+      output: 'budget_with_dep_join',
+    }),
+    step({
+      id: 'budget_with_dep_renamed',
+      name: 'Rename depreciation `value` column',
+      description: 'Rename to depreciation_value so the next join with rd_tax_credit_t (also has `value`) does not collide.',
+      input: 'budget_with_dep_join',
+      op: ops.rename({ value: 'depreciation_value' }),
+      output: 'budget_with_dep_renamed',
+    }),
+    step({
+      id: 'budget_with_rd_credit_join',
+      name: 'Join with R&D tax credit per month',
+      description: 'Bring per-month R&D credit onto each row to compute profit_after_tax.',
+      input: 'budget_with_dep_renamed',
+      op: ops.join('rd_tax_credit_t', [{ left: 'month_idx', right: 'month_idx' }], 'left'),
+      output: 'budget_with_rd_credit_join',
+    }),
+    step({
+      id: 'budget_monthly_full_pl',
+      name: 'Monthly P&L (with operating profit + profit after tax)',
+      description:
+        'depreciation = depreciation_t.value (null → 0); ' +
+        'operating_profit = ebitda - depreciation; ' +
+        'rd_tax_credit = rd_tax_credit_t.value (null → 0); ' +
+        'profit_after_tax = operating_profit + rd_tax_credit. ' +
+        'EBITDA above is the actuals-overridden value, so any pinned EBITDA ' +
+        'flows through to operating_profit and profit_after_tax automatically.',
+      input: 'budget_with_rd_credit_join',
+      op: ops.map({
+        depreciation: iff(eq(col('depreciation_value'), lit(null)), lit(0), col('depreciation_value')),
+        operating_profit: sub(
+          col('ebitda'),
+          iff(eq(col('depreciation_value'), lit(null)), lit(0), col('depreciation_value')),
+        ),
+        rd_tax_credit: iff(eq(col('value'), lit(null)), lit(0), col('value')),
+        profit_after_tax: add(
+          sub(
+            col('ebitda'),
+            iff(eq(col('depreciation_value'), lit(null)), lit(0), col('depreciation_value')),
+          ),
+          iff(eq(col('value'), lit(null)), lit(0), col('value')),
+        ),
+      }),
+      output: 'budget_monthly_full_pl',
+    }),
+
     // Yearly P&L is now derived from the overridden monthly — no separate yearly input.
     step({
       id: 'budget_with_actuals_dates',
       name: 'Attach calendar date to overridden monthly P&L',
       description: 'Join with dates_t to bring date onto each overridden row.',
-      input: 'budget_monthly_with_actuals',
+      input: 'budget_monthly_full_pl',
       op: ops.join('dates_t', [{ left: 'month_idx', right: 'month_idx' }], 'inner'),
       output: 'budget_with_actuals_dates',
     }),
@@ -1160,8 +1215,10 @@ export const salesModel = defineModel({
       id: 'budget_yearly',
       name: 'Yearly P&L (derived from overridden monthly)',
       description:
-        'Sum revenue / cost_of_sales / gross_profit / total_opex / ebitda by calendar year ' +
-        'from the actuals-overridden monthly table. Any month-level override flows up here.',
+        'Sum revenue / cost_of_sales / gross_profit / total_opex / ebitda / ' +
+        'depreciation / operating_profit / rd_tax_credit / profit_after_tax by ' +
+        'calendar year from the overridden monthly table. Any month-level ' +
+        'override flows up here.',
       input: 'budget_with_actuals_year',
       op: ops.groupBy(['year'], {
         revenue: agg.sum('revenue'),
@@ -1169,6 +1226,10 @@ export const salesModel = defineModel({
         gross_profit: agg.sum('gross_profit'),
         total_opex: agg.sum('total_opex'),
         ebitda: agg.sum('ebitda'),
+        depreciation: agg.sum('depreciation'),
+        operating_profit: agg.sum('operating_profit'),
+        rd_tax_credit: agg.sum('rd_tax_credit'),
+        profit_after_tax: agg.sum('profit_after_tax'),
       }),
       output: 'budget_yearly',
     }),
@@ -1257,9 +1318,10 @@ export const salesModel = defineModel({
       id: 'cumulative_ebitda_monthly',
       name: 'Cumulative EBITDA per month (with actuals)',
       description:
-        'Running total of `budget_monthly_with_actuals.ebitda` — uses the overridden ' +
-        'monthly ebitda, so the Balance Sheet\'s Current earnings reflects any P&L actuals ' +
-        'pinned by the user.',
+        'Running total of `budget_monthly_with_actuals.ebitda` — kept for ' +
+        'reference (and any downstream view that wants pure EBITDA cumulative). ' +
+        'Retained earnings and the cash waterfall now use ' +
+        '`cumulative_profit_after_tax_monthly` instead.',
       input: 'budget_monthly_with_actuals',
       op: ops.window({
         partitionBy: [],
@@ -1268,6 +1330,23 @@ export const salesModel = defineModel({
         derive: { cumulative_ebitda: agg.sum('ebitda') },
       }),
       output: 'cumulative_ebitda_monthly',
+    }),
+
+    step({
+      id: 'cumulative_profit_after_tax_monthly',
+      name: 'Cumulative profit-after-tax per month',
+      description:
+        'Running total of `budget_monthly_full_pl.profit_after_tax` (ebitda − ' +
+        'depreciation + rd_tax_credit). Drives Current Earnings on the BS and ' +
+        'flows into the cash waterfall as the textbook-indirect starting point.',
+      input: 'budget_monthly_full_pl',
+      op: ops.window({
+        partitionBy: [],
+        orderBy: 'month_idx',
+        range: { preceding: MONTHS, following: 0 },
+        derive: { cumulative_profit_after_tax: agg.sum('profit_after_tax') },
+      }),
+      output: 'cumulative_profit_after_tax_monthly',
     }),
 
     // ─── Balance Sheet derivations ─────────────────────────────────────────
@@ -1417,25 +1496,27 @@ export const salesModel = defineModel({
       output: 'loans_monthly',
     }),
 
-    // Cash build (full waterfall):
+    // Cash build (full waterfall — textbook indirect method):
     //   cash = opening_cash
-    //        + cumulative_ebitda
-    //        + cumulative_depreciation (non-cash add-back)
-    //        − cumulative_capex (cash spent on assets)
+    //        + cumulative_profit_after_tax            // ebitda − dep + rd_credit
+    //        + cumulative_depreciation                // non-cash add-back
+    //        − cumulative_capex                       // cash spent on assets
     //        − cumulative_loan_repaid
     //        − (trade_debtors − opening_trade_debtors)     // Δ AR drains cash
     //        − (other_debtors − opening_other_debtors)      // Δ other debtors
     //        − (vat − opening_vat)                          // Δ VAT receivable
     //        − (trade_creditors − opening_trade_creditors)  // Δ AP (creditors negative; Δ negative provides cash)
     //        − (other_creditors − opening_other_creditors)
-    // With opening BS satisfying Net Assets = Total Equity, this guarantees
-    // the BS balances (Difference rounds to floating-point noise).
+    // Cum_PaT + cum_dep = cum_EBITDA + cum_rd_credit, so this is equivalent to
+    // adding the R&D credit cash on top of the previous (EBITDA + dep add-back)
+    // formulation. With opening BS satisfying Net Assets = Total Equity, this
+    // guarantees the BS balances (Difference rounds to floating-point noise).
     step({
       id: 'cash_components_step1',
-      name: 'Project cumulative EBITDA to just month + total',
-      description: 'Strip the cumulative_ebitda_monthly table down to (month_idx, cumulative_ebitda).',
-      input: 'cumulative_ebitda_monthly',
-      op: ops.select(['month_idx', 'cumulative_ebitda']),
+      name: 'Project cumulative profit-after-tax to just month + total',
+      description: 'Strip cumulative_profit_after_tax_monthly down to (month_idx, cumulative_profit_after_tax).',
+      input: 'cumulative_profit_after_tax_monthly',
+      op: ops.select(['month_idx', 'cumulative_profit_after_tax']),
       output: 'cash_components_step1',
     }),
     step({
@@ -1514,7 +1595,7 @@ export const salesModel = defineModel({
       id: 'cash_monthly_map',
       name: 'Cash per month (full waterfall)',
       description:
-        'cash = opening_cash + cum_ebitda + cum_depreciation − cum_capex − cum_loan_repaid ' +
+        'cash = opening_cash + cum_profit_after_tax + cum_depreciation − cum_capex − cum_loan_repaid ' +
         '− Δ(trade_debtors) − Δ(other_debtors) − Δ(vat) ' +
         '− Δ(trade_creditors) − Δ(other_creditors). ' +
         'Each Δ = closing − opening; for asset items this drains cash when balance grows, ' +
@@ -1531,7 +1612,7 @@ export const salesModel = defineModel({
                     add(
                       sub(
                         sub(
-                          add(col('opening_cash'), col('cumulative_ebitda')),
+                          add(col('opening_cash'), col('cumulative_profit_after_tax')),
                           col('cumulative_capex'),
                         ),
                         col('cumulative_loan_repaid'),
@@ -1562,13 +1643,15 @@ export const salesModel = defineModel({
       output: 'cash_monthly',
     }),
 
-    // Retained earnings = BFWD + cumulative profit (proxied by cumulative EBITDA
-    // since below-EBITDA P&L items are zero in the forecast).
+    // Retained earnings = BFWD + cumulative profit-after-tax. PaT subtracts
+    // depreciation below EBITDA and adds the R&D credit, so this is the real
+    // post-tax profit accumulation (within the limit that we don't model
+    // corporation tax — zero in the forecast horizon).
     step({
       id: 'retained_earnings_with_opening',
-      name: 'Attach opening BFWD to cumulative EBITDA',
-      description: 'Cross-join cumulative_ebitda_monthly with opening_bs_t.',
-      input: 'cumulative_ebitda_monthly',
+      name: 'Attach opening BFWD to cumulative profit-after-tax',
+      description: 'Cross-join cumulative_profit_after_tax_monthly with opening_bs_t.',
+      input: 'cumulative_profit_after_tax_monthly',
       op: ops.cross('opening_bs_t'),
       output: 'retained_earnings_with_opening',
     }),
@@ -1576,12 +1659,12 @@ export const salesModel = defineModel({
       id: 'retained_earnings_monthly_map',
       name: 'Retained earnings + current earnings per month',
       description:
-        'current_earnings = cumulative_ebitda (proxy for profit after tax). ' +
+        'current_earnings = cumulative_profit_after_tax. ' +
         'retained_earnings = BFWD + current_earnings.',
       input: 'retained_earnings_with_opening',
       op: ops.map({
-        current_earnings: col('cumulative_ebitda'),
-        retained_earnings: add(col('bfwd_retained_earnings'), col('cumulative_ebitda')),
+        current_earnings: col('cumulative_profit_after_tax'),
+        retained_earnings: add(col('bfwd_retained_earnings'), col('cumulative_profit_after_tax')),
       }),
       output: 'retained_earnings_monthly_full',
     }),
@@ -1929,6 +2012,7 @@ export const salesModel = defineModel({
     { ref: 'cost_dept_total_monthly', label: 'Cost dept total per month' },
     { ref: 'total_opex_monthly', label: 'Total opex per month' },
     { ref: 'budget_monthly', label: 'Monthly P&L (revenue → EBITDA)' },
+    { ref: 'budget_monthly_full_pl', label: 'Monthly P&L (with operating profit + PaT)' },
     { ref: 'budget_yearly', label: 'Yearly P&L' },
     { ref: 'tangible_assets_monthly', label: 'Tangible assets per month' },
     { ref: 'trade_debtors_monthly', label: 'Trade debtors per month' },
@@ -2005,10 +2089,16 @@ export const salesModel = defineModel({
     },
     {
       name: 'Budget P&L',
-      description: 'Revenue → cost of sales → gross profit → opex → EBITDA, monthly and yearly.',
+      description:
+        'Revenue → cost of sales → gross profit → opex → EBITDA, plus the ' +
+        'below-EBITDA layer: − depreciation → operating profit + R&D credit ' +
+        '→ profit after tax. Monthly and yearly.',
       refs: [
-        'rev_with_modeller_commission', 'rev_with_depreciation',
+        'rev_with_modeller_commission',
         'budget_with_cos_gp', 'budget_with_opex', 'budget_monthly',
+        'rd_tax_credit_t',
+        'budget_with_dep_join', 'budget_with_dep_renamed',
+        'budget_with_rd_credit_join', 'budget_monthly_full_pl',
         'budget_with_dates', 'budget_with_year', 'budget_yearly',
       ],
     },
@@ -2018,11 +2108,13 @@ export const salesModel = defineModel({
         'Opening balance sheet + per-month derivations: tangible assets (− cumulative ' +
         'depreciation), trade debtors (revenue × AR days), trade creditors (cash opex ' +
         '× AP days), loans (− cumulative repayments), retained earnings (BFWD + ' +
-        'cumulative EBITDA), and cash (opening + cumulative EBITDA + depreciation ' +
-        'add-back − loan repayments). All consolidated in bs_summary_monthly.',
+        'cumulative profit-after-tax), and cash (opening + cumulative PaT + ' +
+        'depreciation add-back − capex − loan repayments − ΔWC). All consolidated ' +
+        'in bs_summary_monthly.',
       refs: [
         'opening_bs_t', 'bs_assumptions_t',
         'cumulative_depreciation_monthly', 'cumulative_ebitda_monthly',
+        'cumulative_profit_after_tax_monthly',
         'tangible_assets_with_opening', 'tangible_assets_monthly_full', 'tangible_assets_monthly',
         'trade_debtors_with_assumptions', 'trade_debtors_monthly_full', 'trade_debtors_monthly',
         'non_staff_opex_monthly',

@@ -267,6 +267,7 @@ function TableGroupGrid({ block, group, source, axisCols, axisLabels, rollupYear
       <AgGridReact
         rowData={rowData}
         columnDefs={columnDefs}
+        defaultColDef={{ sortable: true, resizable: true }}
         singleClickEdit
         stopEditingWhenCellsLoseFocus
         onCellValueChanged={onCellValueChanged}
@@ -666,6 +667,19 @@ function buildRosterGrid(
         ? (p) => {
             const n = parseFloat(p.newValue);
             return Number.isNaN(n) ? p.newValue : n;
+          }
+        : undefined,
+      // String columns: treat the "Current" sentinel (used in
+      // employees_t.start_date for already-hired staff) as the earliest
+      // value so ascending sort lands existing employees first.
+      comparator: c.type === 'string'
+        ? (a: unknown, b: unknown): number => {
+            const sa = a == null ? '' : String(a);
+            const sb = b == null ? '' : String(b);
+            if (sa === sb) return 0;
+            if (sa === 'Current') return -1;
+            if (sb === 'Current') return 1;
+            return sa.localeCompare(sb);
           }
         : undefined,
       __overrideCol: c.name,

@@ -550,7 +550,7 @@ const budgetSection: ReportSection = {
   label: 'Budget P&L',
   hint: 'Profit & Loss layout matching the v4 Budgets sheet — revenue per TA, cost of sales, gross profit, opex per dept, EBITDA.',
   blocks: [
-    { kind: 'title', text: 'Capital depreciation (input)' },
+    { kind: 'title', text: 'Capital depreciation (input — booked below EBITDA)' },
     {
       kind: 'table',
       source: 'depreciation_t',
@@ -561,6 +561,26 @@ const budgetSection: ReportSection = {
       },
       rollup: yearRollup,
       canonical: { refs: ['depreciation_t'] },
+    },
+    { kind: 'spacer', rows: 2 },
+
+    { kind: 'title', text: 'R&D tax credit (input — booked below operating profit)' },
+    { kind: 'paragraph', italic: true,
+      text:
+        'Per-month R&D tax credit (positive = credit). Defaults reproduce v4: ' +
+        '$437k 2026, $330k 2027, $330k 2028, $0 thereafter — smoothed evenly ' +
+        'across each year. Edit any monthly cell to override.',
+    },
+    {
+      kind: 'table',
+      source: 'rd_tax_credit_t',
+      axis: monthAxis,
+      rows: {
+        kind: 'value-columns',
+        rows: [{ col: 'value', label: 'R&D tax credit' }],
+      },
+      rollup: yearRollup,
+      canonical: { refs: ['rd_tax_credit_t'] },
     },
     { kind: 'spacer', rows: 2 },
 
@@ -631,9 +651,6 @@ const budgetSection: ReportSection = {
           { source: 'modeller_commission_monthly',
             identity: {} as Record<string, string | number>,
             valueCol: 'modeller_commission', label: 'Modeller Commission' },
-          { source: 'depreciation_t',
-            identity: {} as Record<string, string | number>,
-            valueCol: 'value', label: 'Capital depreciation' },
           { source: 'budget_monthly_with_actuals',
             identity: {} as Record<string, string | number>,
             valueCol: 'cost_of_sales', label: 'Total Cost of Sales', bold: true },
@@ -653,6 +670,19 @@ const budgetSection: ReportSection = {
           { source: 'budget_monthly_with_actuals',
             identity: {} as Record<string, string | number>,
             valueCol: 'ebitda', label: 'EBITDA', bold: true },
+          // ── Below EBITDA ──
+          { source: 'budget_monthly_full_pl',
+            identity: {} as Record<string, string | number>,
+            valueCol: 'depreciation', label: 'Capital depreciation' },
+          { source: 'budget_monthly_full_pl',
+            identity: {} as Record<string, string | number>,
+            valueCol: 'operating_profit', label: 'Operating Profit', bold: true },
+          { source: 'budget_monthly_full_pl',
+            identity: {} as Record<string, string | number>,
+            valueCol: 'rd_tax_credit', label: 'R&D Tax Credit' },
+          { source: 'budget_monthly_full_pl',
+            identity: {} as Record<string, string | number>,
+            valueCol: 'profit_after_tax', label: 'PROFIT AFTER TAX', bold: true },
         ],
       },
       rollup: yearRollup,
@@ -666,11 +696,15 @@ const budgetSection: ReportSection = {
       rows: {
         kind: 'value-columns',
         rows: [
-          { col: 'revenue',       label: 'Revenue', bold: true },
-          { col: 'cost_of_sales', label: 'Cost of sales' },
-          { col: 'gross_profit',  label: 'Gross profit', bold: true },
-          { col: 'total_opex',    label: 'Total opex' },
-          { col: 'ebitda',        label: 'EBITDA', bold: true },
+          { col: 'revenue',          label: 'Revenue', bold: true },
+          { col: 'cost_of_sales',    label: 'Cost of sales' },
+          { col: 'gross_profit',     label: 'Gross profit', bold: true },
+          { col: 'total_opex',       label: 'Total opex' },
+          { col: 'ebitda',           label: 'EBITDA', bold: true },
+          { col: 'depreciation',     label: 'Capital depreciation' },
+          { col: 'operating_profit', label: 'Operating profit', bold: true },
+          { col: 'rd_tax_credit',    label: 'R&D tax credit' },
+          { col: 'profit_after_tax', label: 'Profit after tax', bold: true },
         ],
       },
     },
@@ -705,12 +739,12 @@ const budgetSection: ReportSection = {
     },
     { kind: 'paragraph', italic: true,
       text:
-        'v4 P&L below EBITDA — Other Income / Exceptional / Interest / Depreciation (below-line) ' +
-        '/ Amortisation / Financing Costs / Tax (R&D credit) / Corporation Tax — is zero or ' +
-        'immaterial in the v4 forecast (Tax R&D credit ≈ $70–90k/yr, Corporation Tax kicks in ' +
-        '2029+ and tracks 19% of operating profit). The Balance Sheet\'s Current earnings line ' +
-        'uses cumulative EBITDA as the proxy for profit-after-tax, which is exact for the ' +
-        'forecast period and within ~5% once Corporation Tax begins.',
+        'Below EBITDA we now book Capital Depreciation and R&D Tax Credit explicitly ' +
+        '(matching v4\'s P&L layout). The remaining v4 below-line items — Other Income / ' +
+        'Exceptional / Interest / Amortisation / Financing Costs / Corporation Tax — are zero ' +
+        'or immaterial in the v4 forecast (Corporation Tax kicks in 2029+ and tracks ~19% of ' +
+        'operating profit). The Balance Sheet\'s Current Earnings line is cumulative ' +
+        'profit-after-tax, so the BS now matches v4 within those omitted lines.',
     },
   ],
 };
@@ -832,7 +866,7 @@ const balanceSheetSection: ReportSection = {
           { source: 'bs_summary_monthly_with_actuals', identity: {}, valueCol: 'bfwd_retained_earnings',
             label: 'BFWD retained earnings' },
           { source: 'bs_summary_monthly_with_actuals', identity: {}, valueCol: 'current_earnings',
-            label: 'Current earnings (cumulative EBITDA)' },
+            label: 'Current earnings (cumulative PaT)' },
           { source: 'bs_summary_monthly_with_actuals', identity: {}, valueCol: 'total_equity',
             label: 'Total Equity', bold: true },
           // ── Check ──
@@ -845,17 +879,16 @@ const balanceSheetSection: ReportSection = {
     },
     { kind: 'paragraph', italic: true,
       text:
-        'Modeling notes: (1) Tangible assets are clamped at zero — once cumulative ' +
-        'depreciation exceeds the opening balance the asset is fully written down ' +
-        '(no new capex modeled). (2) Trade debtors = revenue × AR days / 30, trade ' +
-        'creditors = cash opex × AP days / 30 — stylised, not modeled at the ' +
-        'invoice/payment level. (3) Current earnings proxy = cumulative EBITDA ' +
-        '(below-EBITDA P&L lines — interest, tax, amortisation — are zero in v4 ' +
-        'forecast, so this is exact for the forecast period). (4) Cash includes ' +
-        'opening cash, cumulative EBITDA, depreciation add-back (capped at the ' +
-        'opening tangible balance so we don\'t add back depreciation on assets ' +
-        'we never had), Δ AR, Δ AP, and loan repayments — so the BS balances ' +
-        '(Difference rounds to zero).',
+        'Modeling notes: (1) Tangible assets follow the per-month capex schedule less ' +
+        'cumulative depreciation. (2) Trade debtors = revenue × AR days / 30; the four ' +
+        'other working-capital lines (trade creditors, other debtors, VAT, other ' +
+        'creditors) come from per-month v4 closing balances in bs_monthly_schedule_t. ' +
+        '(3) Current earnings = cumulative profit-after-tax (EBITDA − depreciation + ' +
+        'R&D tax credit), so the BS reflects the real post-tax position within the ' +
+        'limit that we don\'t model Corporation Tax (kicks in 2029+ in v4, ~19% of ' +
+        'operating profit). (4) Cash = opening + cum PaT + cum depreciation add-back ' +
+        '− cum capex − cum loan repayments − ΔWC — textbook indirect-method waterfall, ' +
+        'so the BS balances (Difference rounds to zero).',
     },
     { kind: 'spacer', rows: 2 },
 

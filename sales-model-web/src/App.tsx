@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
 import './App.css';
@@ -14,7 +14,8 @@ import { applyEditToInput } from './report/applyEdit';
 import { engineSummary } from './report/summary';
 import { salesReport } from './report/salesReport';
 import { useUndoable } from './useUndoable';
-import { annualSummaryByType, contractValueHistory, quarterlyPivot, syncHubSpot } from './hubspot';
+import { annualSummaryByType, contractValueHistory, highLevelType, quarterlyPivot, syncHubSpot } from './hubspot';
+import { getLineItemConfig, isClassified } from './lineItemConfig';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -269,7 +270,10 @@ export default function App() {
       ) : view === 'hubspot-deals' ? (
         <HubSpotDealsView lastSyncMeta={lastSyncMeta} onSync={runHubSpotSync} />
       ) : view === 'employees' ? (
-        <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="employees" onEdit={handleReportEdit} />
+        <>
+          <StaffOverTimeSection input={input} />
+          <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="employees" onEdit={handleReportEdit} />
+        </>
       ) : view === 'costs' ? (
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="costs" onEdit={handleReportEdit} />
       ) : view === 'balance-sheet' ? (
@@ -729,10 +733,13 @@ interface HubSpotDealsViewProps {
 
 function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
   const [syncing, setSyncing] = useState(false);
-  const [sortKey, setSortKey] = useState<'name' | 'expected' | 'amount' | 'predicted' | 'prob' | 'stage'>('expected');
+  type DealSortKey = 'name' | 'ta' | 'expected' | 'amount' | 'predicted' | 'prob' | 'stage' | 'duration';
+  const [sortKey, setSortKey] = useState<DealSortKey>('stage');
   const [sortDesc, setSortDesc] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'applied' | 'skipped'>('all');
   const [openModal, setOpenModal] = useState<null | 'current' | 'expected'>(null);
+  const [view, setView] = useState<'deals' | 'pricing'>('deals');
+  const [hubspotAmountGtZero, setHubspotAmountGtZero] = useState(true);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -754,31 +761,283 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
     );
   }
 
-  const deals = lastSyncMeta.deals
-    .filter((d) => statusFilter === 'all' || d.status === statusFilter)
+  const preFilter = lastSyncMeta.deals
+    .filter((d) => statusFilter === 'all' || d.status === statusFilter);
+  const hiddenZeroCount = hubspotAmountGtZero
+    ? preFilter.filter((d) => !(d.hubspotAmount != null && d.hubspotAmount > 0)).length
+    : 0;
+  const deals = preFilter
+    .filter((d) => !hubspotAmountGtZero || (d.hubspotAmount != null && d.hubspotAmount > 0))
     .slice()
     .sort((a, b) => {
       const dir = sortDesc ? -1 : 1;
       switch (sortKey) {
         case 'name': return a.name.localeCompare(b.name) * dir;
+        case 'ta': return a.therapeuticArea.localeCompare(b.therapeuticArea) * dir;
         case 'expected': return (a.expectedAmount - b.expectedAmount) * dir;
         case 'amount': return (a.amountReported - b.amountReported) * dir;
         case 'predicted':
           return ((a.closeDatePredicted ?? '') < (b.closeDatePredicted ?? '') ? -1 : 1) * dir;
         case 'prob': return (a.closeProbability - b.closeProbability) * dir;
-        case 'stage': return a.stageLabel.localeCompare(b.stageLabel) * dir;
+        case 'duration': return (a.durationMonths - b.durationMonths) * dir;
+        case 'stage': {
+          // Stage progression — rank by the stage's close probability so the
+          // latest pipeline stages (closest to Closed Won) come first when
+          // descending. Tiebreaker: stage label, then deal name.
+          const probCmp = a.closeProbability - b.closeProbability;
+          if (probCmp !== 0) return probCmp * dir;
+          const stageCmp = a.stageLabel.localeCompare(b.stageLabel);
+          if (stageCmp !== 0) return stageCmp * dir;
+          return a.name.localeCompare(b.name) * dir;
+        }
       }
     });
 
   const totalExpected = deals.reduce((s, d) => s + d.expectedAmount, 0);
   const totalAmount = deals.reduce((s, d) => s + d.amountReported, 0);
 
-  const headerSort = (key: typeof sortKey, label: string) => (
+  const downloadExcel = async () => {
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Bitfount Sales Model';
+    wb.created = new Date();
+    const sheet = wb.addWorksheet('HubSpot Deals');
+
+    sheet.columns = [
+      { header: 'Deal', key: 'name', width: 48 },
+      { header: 'Pipeline', key: 'pipeline', width: 18 },
+      { header: 'Stage', key: 'stage', width: 22 },
+      { header: 'TA', key: 'ta', width: 14 },
+      { header: 'Amount', key: 'amount', width: 16, style: { numFmt: '"$"#,##0' } },
+      { header: 'Close probability', key: 'prob', width: 16, style: { numFmt: '0.0%' } },
+      { header: 'Expected', key: 'expected', width: 16, style: { numFmt: '"$"#,##0' } },
+      { header: 'Close (HubSpot)', key: 'closeHs', width: 14, style: { numFmt: 'yyyy-mm-dd' } },
+      { header: 'Close (predicted)', key: 'closePred', width: 16, style: { numFmt: 'yyyy-mm-dd' } },
+      { header: 'Duration (months)', key: 'duration', width: 16, style: { numFmt: '0' } },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Skip reason', key: 'skip', width: 32 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columns.length } };
+
+    const parseDate = (s: string | null): Date | null => {
+      if (!s) return null;
+      const d = new Date(s + 'T00:00:00Z');
+      return isNaN(d.getTime()) ? null : d;
+    };
+
+    deals.forEach((d, i) => {
+      const rowNumber = i + 2;
+      const row = sheet.addRow({
+        name: d.name,
+        pipeline: d.pipelineLabel,
+        stage: d.stageLabel,
+        ta: d.therapeuticArea,
+        amount: d.amountReported,
+        prob: d.closeProbability,
+        closeHs: parseDate(d.closeDateHubSpot),
+        closePred: parseDate(d.closeDatePredicted),
+        duration: d.durationMonths,
+        status: d.status,
+        skip: d.skipReason ?? '',
+      });
+      row.getCell('expected').value = { formula: `E${rowNumber}*F${rowNumber}` };
+    });
+
+    const totalRow = sheet.addRow({});
+    totalRow.font = { bold: true };
+    totalRow.getCell('name').value = 'TOTAL';
+    const lastDataRow = deals.length + 1;
+    totalRow.getCell('amount').value = { formula: `SUM(E2:E${lastDataRow})` };
+    totalRow.getCell('expected').value = { formula: `SUM(G2:G${lastDataRow})` };
+
+    // ── Sheet 2: Pricing — one row per deal × one column per line item ──
+    const pricingDeals = deals.filter((d) => d.lineItems.length > 0);
+    if (pricingDeals.length > 0) {
+      const pricingSheet = wb.addWorksheet('Pricing');
+
+      // Discover line items with at least one non-zero value, sorted by
+      // configured order (unknown → end, then alphabetical).
+      const lineItemNamesSet = new Set<string>();
+      const valuesByDeal = new Map<string, Record<string, number>>();
+      for (const d of pricingDeals) {
+        const byName: Record<string, number> = {};
+        for (const li of d.lineItems) byName[li.name] = (byName[li.name] || 0) + li.value;
+        valuesByDeal.set(d.id, byName);
+        for (const [n, v] of Object.entries(byName)) if (v !== 0) lineItemNamesSet.add(n);
+      }
+      const lineItemNames = [...lineItemNamesSet].sort((a, b) => {
+        const oa = getLineItemConfig(a).order;
+        const ob = getLineItemConfig(b).order;
+        if (oa !== ob) return oa - ob;
+        return a.localeCompare(b);
+      });
+
+      pricingSheet.columns = [
+        { header: 'Deal', key: 'name', width: 48 },
+        { header: 'TA', key: 'ta', width: 16 },
+        { header: 'Stage', key: 'stage', width: 22 },
+        { header: 'Sites', key: 'sites', width: 8, style: { numFmt: '0' } },
+        { header: 'Patients', key: 'patients', width: 10, style: { numFmt: '0' } },
+        { header: 'Duration (months)', key: 'duration', width: 14, style: { numFmt: '0' } },
+        { header: 'Close probability', key: 'prob', width: 14, style: { numFmt: '0.0%' } },
+        { header: 'Close (predicted)', key: 'closePred', width: 16, style: { numFmt: 'yyyy-mm-dd' } },
+        ...lineItemNames.map((n) => ({
+          header: n,
+          key: `li:${n}`,
+          width: 20,
+          style: { numFmt: '"$"#,##0' },
+        })),
+        { header: 'List Total', key: 'listTotal', width: 16, style: { numFmt: '"$"#,##0' } },
+        { header: 'Discount', key: 'discount', width: 14, style: { numFmt: '"$"#,##0;[Red]-"$"#,##0' } },
+        { header: 'HubSpot Total', key: 'hubspotTotal', width: 16, style: { numFmt: '"$"#,##0' } },
+        { header: 'Calc Total', key: 'calcTotal', width: 16, style: { numFmt: '"$"#,##0' } },
+        { header: 'Δ (HubSpot − Calc)', key: 'diff', width: 18, style: { numFmt: '"$"#,##0;[Red]-"$"#,##0' } },
+      ];
+      pricingSheet.getRow(1).font = { bold: true };
+      pricingSheet.views = [{ state: 'frozen', ySplit: 1, xSplit: 1 }];
+      pricingSheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: pricingSheet.columns.length },
+      };
+
+      // First per-line-item column index (1-based, after the 8 fixed columns)
+      const firstLiColIdx = 9;
+      const lastLiColIdx = firstLiColIdx + lineItemNames.length - 1;
+      const listColIdx = lastLiColIdx + 1;
+      const discountColIdx = lastLiColIdx + 2;
+      const hubspotColIdx = lastLiColIdx + 3;
+      const calcColIdx = lastLiColIdx + 4;
+      const diffColIdx = lastLiColIdx + 5;
+
+      const sorted = [...pricingDeals].sort((a, b) => b.amountReported - a.amountReported);
+      sorted.forEach((d, i) => {
+        const rowNum = i + 2;
+        const byName = valuesByDeal.get(d.id) || {};
+        const rowData: Record<string, unknown> = {
+          name: d.name,
+          ta: d.therapeuticArea,
+          stage: d.stageLabel,
+          sites: countByUnit(d, 'site') || null,
+          patients: countByUnit(d, 'patient') || null,
+          duration: d.durationMonths,
+          prob: d.closeProbability,
+          closePred: parseDate(d.closeDatePredicted),
+        };
+        for (const n of lineItemNames) rowData[`li:${n}`] = byName[n] || 0;
+        rowData.listTotal = d.listTotal;
+        rowData.discount = -d.discountTotal;
+        if (d.hubspotAmount != null) rowData.hubspotTotal = d.hubspotAmount;
+        const r = pricingSheet.addRow(rowData);
+        const firstLetter = colLetter(firstLiColIdx);
+        const lastLetter = colLetter(lastLiColIdx);
+        r.getCell(calcColIdx).value = { formula: `SUM(${firstLetter}${rowNum}:${lastLetter}${rowNum})` };
+        if (d.hubspotAmount != null) {
+          r.getCell(diffColIdx).value = {
+            formula: `${colLetter(hubspotColIdx)}${rowNum}-${colLetter(calcColIdx)}${rowNum}`,
+          };
+        }
+      });
+
+      const lastPricingRow = sorted.length + 1;
+      const pricingTotalRow = pricingSheet.addRow({});
+      pricingTotalRow.font = { bold: true };
+      pricingTotalRow.getCell('name').value = 'TOTAL';
+      pricingTotalRow.getCell('sites').value = { formula: `SUM(D2:D${lastPricingRow})` };
+      pricingTotalRow.getCell('patients').value = { formula: `SUM(E2:E${lastPricingRow})` };
+      for (let i = 0; i < lineItemNames.length; i++) {
+        const letter = colLetter(firstLiColIdx + i);
+        pricingTotalRow.getCell(firstLiColIdx + i).value = {
+          formula: `SUM(${letter}2:${letter}${lastPricingRow})`,
+        };
+      }
+      pricingTotalRow.getCell(listColIdx).value = {
+        formula: `SUM(${colLetter(listColIdx)}2:${colLetter(listColIdx)}${lastPricingRow})`,
+      };
+      pricingTotalRow.getCell(discountColIdx).value = {
+        formula: `SUM(${colLetter(discountColIdx)}2:${colLetter(discountColIdx)}${lastPricingRow})`,
+      };
+      pricingTotalRow.getCell(hubspotColIdx).value = {
+        formula: `SUM(${colLetter(hubspotColIdx)}2:${colLetter(hubspotColIdx)}${lastPricingRow})`,
+      };
+      pricingTotalRow.getCell(calcColIdx).value = {
+        formula: `SUM(${colLetter(calcColIdx)}2:${colLetter(calcColIdx)}${lastPricingRow})`,
+      };
+      pricingTotalRow.getCell(diffColIdx).value = {
+        formula: `${colLetter(hubspotColIdx)}${lastPricingRow + 1}-${colLetter(calcColIdx)}${lastPricingRow + 1}`,
+      };
+    }
+
+    // ── Sheet 3: Project Configuration projection by month ──
+    const pcByMonth = new Map<string, { expected: number; total: number; deals: number }>();
+    for (const d of deals) {
+      if (!d.closeDatePredicted) continue;
+      let pc = 0;
+      for (const li of d.lineItems) {
+        if (highLevelType(li.name) === 'Project Configuration') pc += li.value;
+      }
+      if (pc === 0) continue;
+      const month = d.closeDatePredicted.slice(0, 7);
+      const cur = pcByMonth.get(month) ?? { expected: 0, total: 0, deals: 0 };
+      cur.total += pc;
+      cur.expected += pc * d.closeProbability;
+      cur.deals += 1;
+      pcByMonth.set(month, cur);
+    }
+    if (pcByMonth.size > 0) {
+      const pcSheet = wb.addWorksheet('Project Config Projection');
+      pcSheet.columns = [
+        { header: 'Month', key: 'month', width: 12, style: { numFmt: 'yyyy-mm' } },
+        { header: 'Deals', key: 'deals', width: 8, style: { numFmt: '0' } },
+        { header: 'Contracted', key: 'total', width: 16, style: { numFmt: '"$"#,##0' } },
+        { header: 'Expected', key: 'expected', width: 16, style: { numFmt: '"$"#,##0' } },
+      ];
+      pcSheet.getRow(1).font = { bold: true };
+      pcSheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+      const sortedMonths = [...pcByMonth.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      sortedMonths.forEach(([month, v]) => {
+        pcSheet.addRow({
+          month: parseDate(month + '-01'),
+          deals: v.deals,
+          total: v.total,
+          expected: v.expected,
+        });
+      });
+      const lastPcRow = sortedMonths.length + 1;
+      const pcTotalRow = pcSheet.addRow({});
+      pcTotalRow.font = { bold: true };
+      pcTotalRow.getCell('month').value = 'TOTAL';
+      pcTotalRow.getCell('deals').value = { formula: `SUM(B2:B${lastPcRow})` };
+      pcTotalRow.getCell('total').value = { formula: `SUM(C2:C${lastPcRow})` };
+      pcTotalRow.getCell('expected').value = { formula: `SUM(D2:D${lastPcRow})` };
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hubspot-deals-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Text-ish columns default to ascending (A→Z); everything else (numbers,
+  // dates, stage progression) defaults to descending so the most interesting
+  // rows surface at the top on first click.
+  const textKeys: DealSortKey[] = ['name', 'ta'];
+  const headerSort = (key: DealSortKey, label: string) => (
     <th
       style={{ cursor: 'pointer', userSelect: 'none' }}
       onClick={() => {
         if (sortKey === key) setSortDesc(!sortDesc);
-        else { setSortKey(key); setSortDesc(true); }
+        else { setSortKey(key); setSortDesc(!textKeys.includes(key)); }
       }}
     >
       {label} {sortKey === key ? (sortDesc ? '↓' : '↑') : ''}
@@ -786,7 +1045,11 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
   );
 
   const history = contractValueHistory(lastSyncMeta.deals);
-  const maxHistCV = history.reduce((m, r) => Math.max(m, r.totalCV), 0);
+  const historySeries = history.map((r) => ({
+    key: r.monthStart.slice(0, 7),
+    value: r.totalCV,
+    tooltip: `${formatBucketLabel(r.monthStart.slice(0, 7), 'month')} · ${r.liveCount} live deals · ${formatShortMoney(r.totalCV)}`,
+  }));
   const currentPipe = quarterlyPivot(lastSyncMeta.deals, { weighted: false, openOnly: true });
   const expectedClose = quarterlyPivot(lastSyncMeta.deals, { weighted: true, openOnly: false });
 
@@ -827,39 +1090,9 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
         <h2>Total contract value over time <span className="hint">(snapshot at start of each month)</span></h2>
         <p className="hint">
           A deal is counted as live if its create date is ≤ the month start and its HubSpot close date is &gt; the month
-          start. TCV = sum of (unit price × quantity) across the deal's line items.
+          start. TCV = sum of (unit price × quantity) across the deal's line items. Hover a bar for the live-deal count.
         </p>
-        <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
-          <table className="yearly-emp-table" style={{ width: '100%' }}>
-            <thead>
-              <tr>
-                <th>Month start</th>
-                <th>Live deals</th>
-                <th>Total CV</th>
-                <th style={{ width: '50%' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((r) => (
-                <tr key={r.monthStart}>
-                  <td>{r.monthStart}</td>
-                  <td>{r.liveCount}</td>
-                  <td className="bold">{money(r.totalCV)}</td>
-                  <td>
-                    <div
-                      style={{
-                        height: 10,
-                        background: 'var(--accent)',
-                        width: maxHistCV ? `${(r.totalCV / maxHistCV) * 100}%` : '0%',
-                        borderRadius: 2,
-                      }}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TimeBarChart series={historySeries} bucket="month" />
       </section>
 
       <section>
@@ -923,6 +1156,9 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
         <button className="btn" onClick={handleSync} disabled={syncing}>
           {syncing ? 'Syncing…' : 'Re-sync'}
         </button>
+        <button className="btn" onClick={downloadExcel} disabled={deals.length === 0}>
+          Download Excel
+        </button>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className="hint" style={{ margin: 0 }}>Show:</span>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
@@ -931,23 +1167,73 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
             <option value="skipped">Skipped ({lastSyncMeta.dealsSkipped})</option>
           </select>
         </label>
+        <label
+          style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}
+          title="Hide deals where HubSpot's deal-level amount is null or 0 — these are typically duplicate / placeholder records for trials we've already captured under another deal."
+        >
+          <input
+            type="checkbox"
+            checked={hubspotAmountGtZero}
+            onChange={(e) => setHubspotAmountGtZero(e.target.checked)}
+          />
+          <span>HubSpot amount &gt; 0</span>
+          {hubspotAmountGtZero && hiddenZeroCount > 0 && (
+            <span className="hint" style={{ margin: 0 }}>
+              (−{hiddenZeroCount} hidden)
+            </span>
+          )}
+        </label>
+        <div role="tablist" style={{ display: 'flex', gap: 0, marginLeft: 'auto' }}>
+          <button
+            role="tab"
+            aria-selected={view === 'deals'}
+            className="btn"
+            onClick={() => setView('deals')}
+            style={{
+              borderTopRightRadius: 0,
+              borderBottomRightRadius: 0,
+              fontWeight: view === 'deals' ? 600 : 400,
+              background: view === 'deals' ? 'var(--accent)' : undefined,
+              color: view === 'deals' ? 'white' : undefined,
+            }}
+          >
+            Deals
+          </button>
+          <button
+            role="tab"
+            aria-selected={view === 'pricing'}
+            className="btn"
+            onClick={() => setView('pricing')}
+            style={{
+              borderTopLeftRadius: 0,
+              borderBottomLeftRadius: 0,
+              borderLeft: 'none',
+              fontWeight: view === 'pricing' ? 600 : 400,
+              background: view === 'pricing' ? 'var(--accent)' : undefined,
+              color: view === 'pricing' ? 'white' : undefined,
+            }}
+          >
+            Pricing
+          </button>
+        </div>
         <span className="hint" style={{ margin: 0 }}>
           Last sync: {new Date(lastSyncMeta.fetchedAt).toLocaleString()}
         </span>
       </div>
+      {view === 'deals' && (
       <table className="yearly-emp-table">
         <thead>
           <tr>
             {headerSort('name', 'Deal')}
             <th>Pipeline</th>
             {headerSort('stage', 'Stage')}
-            <th>TA</th>
+            {headerSort('ta', 'TA')}
             {headerSort('amount', 'Amount')}
             {headerSort('prob', 'Close prob')}
             {headerSort('expected', 'Expected')}
             <th>Close (HubSpot)</th>
             {headerSort('predicted', 'Close (predicted)')}
-            <th>Duration</th>
+            {headerSort('duration', 'Duration')}
             <th>Status</th>
           </tr>
         </thead>
@@ -971,12 +1257,584 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
           ))}
         </tbody>
       </table>
+      )}
+      {view === 'pricing' && <PricingView deals={deals} />}
       </section>
     </>
+  );
+}
+
+interface PricingViewProps {
+  deals: import('./hubspot').PerDealSummary[];
+}
+
+/** Derive site / patient counts from the manually-classified line items.
+ *  Site- and patient-quantified line items share the same count across a
+ *  deal (e.g. "Site Setup" and "PI Site Setup Fee" both carry the site
+ *  count), so max is the right reducer. */
+function countByUnit(
+  deal: PricingViewProps['deals'][number],
+  unit: 'site' | 'patient',
+): number {
+  let max = 0;
+  for (const li of deal.lineItems) {
+    if (getLineItemConfig(li.name).unit === unit && li.quantity > max) max = li.quantity;
+  }
+  return max;
+}
+
+/** Sum of `unitPrice × quantity` per line item name on a deal. Returns a
+ *  map keyed by line item name. Same name can appear multiple times on a
+ *  deal (rare but possible), so we sum. */
+function lineItemValuesByName(
+  deal: PricingViewProps['deals'][number],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const li of deal.lineItems) out[li.name] = (out[li.name] || 0) + li.value;
+  return out;
+}
+
+type PricingSortKey =
+  | 'name' | 'ta' | 'stage' | 'sites' | 'patients' | 'duration'
+  | 'list' | 'discount' | 'hubspot' | 'calc' | 'diff';
+
+const PRICING_TEXT_KEYS: PricingSortKey[] = ['name', 'ta'];
+
+function PricingView({ deals }: PricingViewProps) {
+  const [bucket, setBucket] = useState<Bucket>('halfyear');
+  const [sortKey, setSortKey] = useState<PricingSortKey>('stage');
+  const [sortDesc, setSortDesc] = useState(true);
+
+  const unsortedRows = useMemo(
+    () => deals
+      .filter((d) => d.lineItems.length > 0)
+      .map((d) => {
+        const byName = lineItemValuesByName(d);
+        const calcTotal = Object.values(byName).reduce((s, v) => s + v, 0);
+        return {
+          deal: d,
+          sites: countByUnit(d, 'site'),
+          patients: countByUnit(d, 'patient'),
+          byName,
+          listTotal: d.listTotal,
+          discount: d.discountTotal,
+          calcTotal,
+          hubspotTotal: d.hubspotAmount,
+        };
+      }),
+    [deals],
+  );
+
+  const rows = useMemo(() => {
+    const dir = sortDesc ? -1 : 1;
+    // Nulls always sort last (regardless of direction), so HubSpot/Δ rows
+    // without an upstream value don't hijack the top of the list.
+    const nullCmp = (an: number | null, bn: number | null): number | null => {
+      if (an == null && bn == null) return 0;
+      if (an == null) return 1;
+      if (bn == null) return -1;
+      return null;
+    };
+    return [...unsortedRows].sort((a, b) => {
+      switch (sortKey) {
+        case 'name': return a.deal.name.localeCompare(b.deal.name) * dir;
+        case 'ta': return a.deal.therapeuticArea.localeCompare(b.deal.therapeuticArea) * dir;
+        case 'sites': return (a.sites - b.sites) * dir;
+        case 'patients': return (a.patients - b.patients) * dir;
+        case 'duration': return (a.deal.durationMonths - b.deal.durationMonths) * dir;
+        case 'list': return (a.listTotal - b.listTotal) * dir;
+        case 'discount': return (a.discount - b.discount) * dir;
+        case 'calc': return (a.calcTotal - b.calcTotal) * dir;
+        case 'hubspot': {
+          const n = nullCmp(a.hubspotTotal, b.hubspotTotal);
+          return n != null ? n : (a.hubspotTotal! - b.hubspotTotal!) * dir;
+        }
+        case 'diff': {
+          const da = a.hubspotTotal == null ? null : a.hubspotTotal - a.calcTotal;
+          const db = b.hubspotTotal == null ? null : b.hubspotTotal - b.calcTotal;
+          const n = nullCmp(da, db);
+          return n != null ? n : (da! - db!) * dir;
+        }
+        case 'stage': {
+          const probCmp = a.deal.closeProbability - b.deal.closeProbability;
+          if (probCmp !== 0) return probCmp * dir;
+          const stageCmp = a.deal.stageLabel.localeCompare(b.deal.stageLabel);
+          if (stageCmp !== 0) return stageCmp * dir;
+          return a.deal.name.localeCompare(b.deal.name) * dir;
+        }
+      }
+    });
+  }, [unsortedRows, sortKey, sortDesc]);
+
+  const headerSort = (key: PricingSortKey, label: string, extraStyle?: CSSProperties) => (
+    <th
+      style={{ cursor: 'pointer', userSelect: 'none', ...extraStyle }}
+      onClick={() => {
+        if (sortKey === key) setSortDesc(!sortDesc);
+        else { setSortKey(key); setSortDesc(!PRICING_TEXT_KEYS.includes(key)); }
+      }}
+    >
+      {label} {sortKey === key ? (sortDesc ? '↓' : '↑') : ''}
+    </th>
+  );
+
+  // Discover the set of line items that have at least one non-zero value
+  // across the visible deals, then sort by config order (unknown items go
+  // to the end).
+  const lineItemNames = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rows) for (const [name, v] of Object.entries(r.byName)) {
+      if (v !== 0) s.add(name);
+    }
+    return [...s].sort((a, b) => {
+      const oa = getLineItemConfig(a).order;
+      const ob = getLineItemConfig(b).order;
+      if (oa !== ob) return oa - ob;
+      return a.localeCompare(b);
+    });
+  }, [rows]);
+
+  const unclassified = useMemo(
+    () => lineItemNames.filter((n) => !isClassified(n)),
+    [lineItemNames],
+  );
+
+  const totalsByName = useMemo(() => {
+    const t: Record<string, number> = {};
+    for (const r of rows) for (const n of lineItemNames) t[n] = (t[n] || 0) + (r.byName[n] || 0);
+    return t;
+  }, [rows, lineItemNames]);
+
+  // Project Configuration fees over time. Payment schedule is 'Start' for the
+  // PC family, so the full expected value lands in the deal's predicted close
+  // month. Expected = raw value × close probability.
+  const projection = useMemo(() => {
+    const byKey = new Map<string, { expected: number; total: number; deals: number }>();
+    const keyFor = (iso: string): string => {
+      const y = iso.slice(0, 4);
+      const m = parseInt(iso.slice(5, 7), 10);
+      if (bucket === 'month') return iso.slice(0, 7);
+      if (bucket === 'halfyear') return `${y} H${m <= 6 ? 1 : 2}`;
+      return `${y} Q${Math.floor((m - 1) / 3) + 1}`;
+    };
+    for (const d of deals) {
+      if (!d.closeDatePredicted) continue;
+      const key = keyFor(d.closeDatePredicted);
+      let pcTotal = 0;
+      for (const li of d.lineItems) {
+        if (highLevelType(li.name) === 'Project Configuration') pcTotal += li.value;
+      }
+      if (pcTotal === 0) continue;
+      const cur = byKey.get(key) ?? { expected: 0, total: 0, deals: 0 };
+      cur.total += pcTotal;
+      cur.expected += pcTotal * d.closeProbability;
+      cur.deals += 1;
+      byKey.set(key, cur);
+    }
+    return [...byKey.entries()]
+      .map(([key, v]) => ({ key, ...v }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  }, [deals, bucket]);
+
+  const projectionTotal = projection.reduce((s, r) => s + r.expected, 0);
+  const projectionRawTotal = projection.reduce((s, r) => s + r.total, 0);
+
+  // Dense series spanning min→max bucket, with gaps filled by 0, then
+  // mapped into the generic shape TimeBarChart expects.
+  const chartSeries = useMemo(() => {
+    if (projection.length === 0) return [] as { key: string; value: number; tooltip: string }[];
+    const byKey = new Map(projection.map((r) => [r.key, r] as const));
+    const dense: { key: string; expected: number; total: number }[] = [];
+    if (bucket === 'month') {
+      const [sy, sm] = projection[0].key.split('-').map((s) => parseInt(s, 10));
+      const [ey, em] = projection[projection.length - 1].key.split('-').map((s) => parseInt(s, 10));
+      let y = sy;
+      let m = sm;
+      while (y < ey || (y === ey && m <= em)) {
+        const k = `${y}-${String(m).padStart(2, '0')}`;
+        const v = byKey.get(k);
+        dense.push({ key: k, expected: v?.expected || 0, total: v?.total || 0 });
+        m += 1;
+        if (m > 12) { m = 1; y += 1; }
+      }
+    } else if (bucket === 'halfyear') {
+      const parseH = (k: string) => {
+        const [y, h] = k.split(' H');
+        return { y: parseInt(y, 10), h: parseInt(h, 10) };
+      };
+      const start = parseH(projection[0].key);
+      const end = parseH(projection[projection.length - 1].key);
+      let y = start.y;
+      let h = start.h;
+      while (y < end.y || (y === end.y && h <= end.h)) {
+        const k = `${y} H${h}`;
+        const v = byKey.get(k);
+        dense.push({ key: k, expected: v?.expected || 0, total: v?.total || 0 });
+        h += 1;
+        if (h > 2) { h = 1; y += 1; }
+      }
+    } else {
+      const parseQ = (k: string) => {
+        const [y, q] = k.split(' Q');
+        return { y: parseInt(y, 10), q: parseInt(q, 10) };
+      };
+      const start = parseQ(projection[0].key);
+      const end = parseQ(projection[projection.length - 1].key);
+      let y = start.y;
+      let q = start.q;
+      while (y < end.y || (y === end.y && q <= end.q)) {
+        const k = `${y} Q${q}`;
+        const v = byKey.get(k);
+        dense.push({ key: k, expected: v?.expected || 0, total: v?.total || 0 });
+        q += 1;
+        if (q > 4) { q = 1; y += 1; }
+      }
+    }
+    return dense.map((r) => ({
+      key: r.key,
+      value: r.expected,
+      tooltip: `${formatBucketLabel(r.key, bucket)} · expected ${formatShortMoney(r.expected)} · contracted ${formatShortMoney(r.total)}`,
+    }));
+  }, [projection, bucket]);
+
+  if (rows.length === 0) {
+    return <p className="hint">No deals with line items available. Sync first.</p>;
+  }
+
+  return (
+    <>
+      <p className="hint" style={{ marginTop: 0 }}>
+        One row per deal · per-line-item values are post-discount (HubSpot's <code>amount</code>) ·
+        column per line item classified manually in <code>lineItemConfig.ts</code> ·
+        <strong> Sites</strong> / <strong>Patients</strong> = max qty across line items of that unit ·
+        <strong> List</strong> = pre-discount Σ(price × qty) · <strong>Disc</strong> = total discount
+        applied · <strong>Calc</strong> = List − Disc · <strong>HubSpot</strong> = deal-level
+        <code> amount</code> · <strong>Δ</strong> = HubSpot − Calc.
+      </p>
+      {unclassified.length > 0 && (
+        <p className="hint" style={{ color: 'var(--neg, #b91c1c)' }}>
+          <strong>Unclassified line items</strong> (rightmost columns — add to
+          <code> lineItemConfig.ts</code>): {unclassified.join(', ')}
+        </p>
+      )}
+      <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+        <table className="yearly-emp-table" style={{ width: '100%' }}>
+          <thead>
+            <tr>
+              {headerSort('name', 'Deal', { textAlign: 'left', minWidth: 280 })}
+              {headerSort('ta', 'TA', { textAlign: 'left' })}
+              {headerSort('stage', 'Stage', { textAlign: 'left' })}
+              {headerSort('sites', 'Sites')}
+              {headerSort('patients', 'Patients')}
+              {headerSort('duration', 'Duration')}
+              {lineItemNames.map((n) => {
+                const cfg = getLineItemConfig(n);
+                return (
+                  <th key={n} title={`${n} · unit: ${cfg.unit}`}>
+                    {cfg.short || n}
+                  </th>
+                );
+              })}
+              {headerSort('list', 'List')}
+              {headerSort('discount', 'Disc')}
+              {headerSort('hubspot', 'HubSpot')}
+              {headerSort('calc', 'Calc')}
+              {headerSort('diff', 'Δ')}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ deal, sites, patients, byName, listTotal, discount, calcTotal, hubspotTotal }) => {
+              const diff = hubspotTotal == null ? null : hubspotTotal - calcTotal;
+              const diffSignificant = diff != null && Math.abs(diff) >= 1;
+              return (
+                <tr key={deal.id}>
+                  <td style={{ textAlign: 'left', maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={deal.name}>
+                    {deal.name}
+                  </td>
+                  <td style={{ textAlign: 'left' }}>{deal.therapeuticArea}</td>
+                  <td style={{ textAlign: 'left' }}>{deal.stageLabel}</td>
+                  <td>{sites || ''}</td>
+                  <td>{patients || ''}</td>
+                  <td>{deal.durationMonths}m</td>
+                  {lineItemNames.map((n) => <td key={n}>{money(byName[n] || 0)}</td>)}
+                  <td>{money(listTotal)}</td>
+                  <td className={discount > 0 ? 'neg' : ''}>{discount ? `−${money(discount)}` : ''}</td>
+                  <td>{hubspotTotal == null ? <span className="hint">—</span> : money(hubspotTotal)}</td>
+                  <td className="bold">{money(calcTotal)}</td>
+                  <td
+                    className={diffSignificant ? 'neg' : ''}
+                    title={diff == null ? 'No HubSpot amount on deal' : `HubSpot ${money(hubspotTotal!)} − Calc ${money(calcTotal)}`}
+                  >
+                    {diff == null ? '' : diffSignificant ? money(diff) : '✓'}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="total-row">
+              <td colSpan={3} style={{ textAlign: 'left' }}>TOTAL</td>
+              <td>{rows.reduce((s, r) => s + r.sites, 0)}</td>
+              <td>{rows.reduce((s, r) => s + r.patients, 0)}</td>
+              <td></td>
+              {lineItemNames.map((n) => <td key={n} className="bold">{money(totalsByName[n] || 0)}</td>)}
+              <td className="bold">{money(rows.reduce((s, r) => s + r.listTotal, 0))}</td>
+              <td className="bold neg">
+                {rows.reduce((s, r) => s + r.discount, 0) > 0
+                  ? `−${money(rows.reduce((s, r) => s + r.discount, 0))}`
+                  : ''}
+              </td>
+              <td className="bold">{money(rows.reduce((s, r) => s + (r.hubspotTotal ?? 0), 0))}</td>
+              <td className="bold">{money(rows.reduce((s, r) => s + r.calcTotal, 0))}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ marginTop: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>
+              Projected Project Configuration fees{' '}
+              <span className="hint">(by predicted close {bucketLabel(bucket)}, probability-weighted)</span>
+            </h3>
+            <p className="hint">
+              Project Configuration line items are paid up-front, so the full expected value lands
+              in the deal's predicted close {bucketLabel(bucket)}. Expected = contracted value × close probability.
+              Across all included deals: ${Math.round(projectionRawTotal).toLocaleString()} contracted ·{' '}
+              <strong>${Math.round(projectionTotal).toLocaleString()} expected</strong>.
+            </p>
+          </div>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="hint" style={{ margin: 0 }}>Bucket:</span>
+            <select value={bucket} onChange={(e) => setBucket(e.target.value as Bucket)}>
+              <option value="halfyear">Half-year</option>
+              <option value="quarter">Quarter</option>
+              <option value="month">Month</option>
+            </select>
+          </label>
+        </div>
+        {projection.length === 0 ? (
+          <p className="hint">No Project Configuration line items in current selection.</p>
+        ) : (
+          <>
+          <TimeBarChart series={chartSeries} bucket={bucket} />
+          <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6, marginTop: 12 }}>
+            <table className="yearly-emp-table" style={{ width: '100%' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>
+                    {bucket === 'month' ? 'Month' : bucket === 'halfyear' ? 'Half-year' : 'Quarter'}
+                  </th>
+                  <th>Deals</th>
+                  <th>Contracted</th>
+                  <th>Expected</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projection.map((r) => (
+                  <tr key={r.key}>
+                    <td style={{ textAlign: 'left' }}>{r.key}</td>
+                    <td>{r.deals}</td>
+                    <td>{money(r.total)}</td>
+                    <td className="bold">{money(r.expected)}</td>
+                  </tr>
+                ))}
+                <tr className="total-row">
+                  <td style={{ textAlign: 'left' }}>TOTAL</td>
+                  <td>{projection.reduce((s, r) => s + r.deals, 0)}</td>
+                  <td className="bold">{money(projectionRawTotal)}</td>
+                  <td className="bold">{money(projectionTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Simple time-axis bar chart. Bars are evenly spaced over the dense series
+// (one slot per month, quarter, or half-year), so the x-axis is time-ordered
+// without needing a real linear date scale.
+type Bucket = 'month' | 'quarter' | 'halfyear';
+
+interface TimeBarChartProps {
+  series: { key: string; value: number; tooltip: string }[];
+  bucket: Bucket;
+  height?: number;
+  /** y-axis tick formatter. Defaults to compact $ amounts. */
+  yFormat?: (v: number) => string;
+}
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function bucketLabel(b: Bucket): string {
+  return b === 'month' ? 'month' : b === 'quarter' ? 'quarter' : 'half-year';
+}
+
+function formatBucketLabel(key: string, bucket: Bucket): string {
+  if (bucket === 'month') {
+    const [y, m] = key.split('-').map((s) => parseInt(s, 10));
+    return `${MONTH_SHORT[m - 1]} '${String(y).slice(2)}`;
+  }
+  if (bucket === 'halfyear') {
+    const [y, h] = key.split(' '); // "2026 H1"
+    return `${h} '${y.slice(2)}`;
+  }
+  return key; // "2026 Q1"
+}
+
+function formatShortMoney(v: number): string {
+  if (Math.abs(v) >= 1e9) return '$' + (v / 1e9).toFixed(1) + 'B';
+  if (Math.abs(v) >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+  if (Math.abs(v) >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+  return '$' + Math.round(v);
+}
+
+function niceCeil(v: number): number {
+  if (v <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const norm = v / mag;
+  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return nice * mag;
+}
+
+function TimeBarChart({ series, bucket, height = 280, yFormat = formatShortMoney }: TimeBarChartProps) {
+  const PAD = { top: 16, right: 16, bottom: 44, left: 64 };
+  const slotW = bucket === 'month' ? 28 : bucket === 'quarter' ? 56 : 80;
+  const barW = bucket === 'month' ? 18 : bucket === 'quarter' ? 40 : 60;
+  const innerH = height - PAD.top - PAD.bottom;
+  const innerW = Math.max(series.length, 1) * slotW;
+  const totalW = innerW + PAD.left + PAD.right;
+
+  const maxVal = series.reduce((m, r) => Math.max(m, r.value), 0);
+  const axisMax = niceCeil(maxVal);
+  const y = (v: number) => PAD.top + innerH - (axisMax === 0 ? 0 : (v / axisMax) * innerH);
+  const ticks = 5;
+  const tickValues = Array.from({ length: ticks + 1 }, (_, i) => (axisMax / ticks) * i);
+
+  // X-axis label policy. For month: label quarter starts (Jan/Apr/Jul/Oct),
+  // emphasize January. For quarter / halfyear: label every slot, emphasize
+  // the year start (Q1 / H1).
+  const showLabel = (key: string): { label: string; emphasize: boolean } | null => {
+    if (bucket === 'quarter') return { label: key, emphasize: key.endsWith('Q1') };
+    if (bucket === 'halfyear') return { label: formatBucketLabel(key, 'halfyear'), emphasize: key.endsWith('H1') };
+    const m = parseInt(key.slice(5, 7), 10);
+    if (m !== 1 && m !== 4 && m !== 7 && m !== 10) return null;
+    return { label: formatBucketLabel(key, 'month'), emphasize: m === 1 };
+  };
+
+  return (
+    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 6, padding: 6, background: '#fff' }}>
+      <svg width={totalW} height={height} style={{ display: 'block' }}>
+        {tickValues.map((v) => (
+          <g key={v}>
+            <line x1={PAD.left} x2={totalW - PAD.right} y1={y(v)} y2={y(v)} stroke="#eef" />
+            <text x={PAD.left - 8} y={y(v) + 4} textAnchor="end" fontSize="11" fill="#6b7280">
+              {yFormat(v)}
+            </text>
+          </g>
+        ))}
+        <line x1={PAD.left} x2={totalW - PAD.right} y1={y(0)} y2={y(0)} stroke="#9ca3af" />
+        {series.map((r, i) => {
+          const x = PAD.left + i * slotW + (slotW - barW) / 2;
+          const h = y(0) - y(r.value);
+          const lbl = showLabel(r.key);
+          return (
+            <g key={r.key}>
+              {r.value > 0 && (
+                <rect x={x} y={y(r.value)} width={barW} height={h} fill="var(--accent)">
+                  <title>{r.tooltip}</title>
+                </rect>
+              )}
+              {lbl && (
+                <text
+                  x={PAD.left + i * slotW + slotW / 2}
+                  y={height - PAD.bottom + 16}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fontWeight={lbl.emphasize ? 600 : 400}
+                  fill={lbl.emphasize ? '#111827' : '#6b7280'}
+                >
+                  {lbl.label}
+                </text>
+              )}
+              {lbl && (
+                <line
+                  x1={PAD.left + i * slotW + slotW / 2}
+                  x2={PAD.left + i * slotW + slotW / 2}
+                  y1={y(0)}
+                  y2={y(0) + 4}
+                  stroke="#9ca3af"
+                />
+              )}
+            </g>
+          );
+        })}
+        {series.length === 0 && (
+          <text x={totalW / 2} y={height / 2} textAnchor="middle" fontSize="13" fill="#9ca3af">
+            No data
+          </text>
+        )}
+      </svg>
+    </div>
+  );
+}
+
+/** Headcount per month over the model horizon. An employee is active in
+ *  month M when their startDate (or "Current") ≤ M AND endDate is null/
+ *  undefined or M ≤ endDate. */
+function StaffOverTimeSection({ input }: { input: ModelInput }) {
+  const series = useMemo(() => {
+    return input.dates.map((d) => {
+      const monthKey = d.slice(0, 7);
+      let count = 0;
+      for (const e of input.employees) {
+        const started = e.startDate === 'Current' || e.startDate <= monthKey;
+        if (!started) continue;
+        if (e.endDate && monthKey > e.endDate) continue;
+        count += 1;
+      }
+      return {
+        key: monthKey,
+        value: count,
+        tooltip: `${formatBucketLabel(monthKey, 'month')} · ${count} staff`,
+      };
+    });
+  }, [input.dates, input.employees]);
+
+  const maxHead = series.reduce((m, r) => Math.max(m, r.value), 0);
+  const minHead = series.reduce((m, r) => Math.min(m, r.value), maxHead);
+
+  return (
+    <section>
+      <h2>
+        Staff over time <span className="hint">(month-end headcount from the employees roster)</span>
+      </h2>
+      <p className="hint" style={{ margin: '4px 0 12px' }}>
+        Counts every employee whose <code>startDate</code> ≤ month and (no <code>endDate</code> or
+        month ≤ <code>endDate</code>). Range: <strong>{minHead}–{maxHead}</strong> over{' '}
+        {input.dates.length} months.
+      </p>
+      <TimeBarChart series={series} bucket="month" height={240} yFormat={(v) => String(Math.round(v))} />
+    </section>
   );
 }
 
 function money(v: number): string {
   if (!v) return '';
   return '$' + Math.round(v).toLocaleString();
+}
+
+/** 1-based column index → Excel column letter (1=A, 26=Z, 27=AA, …). */
+function colLetter(n: number): string {
+  let s = '';
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
 }
