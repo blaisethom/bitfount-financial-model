@@ -1,4 +1,4 @@
-// Single-pane explorer for the v2 declarative engine. Sources and steps live
+// Single-pane explorer for the declarative engine. Sources and steps live
 // in one navigable node list; the user walks through them with Prev/Next or by
 // clicking entries in the (optionally section-grouped) sidebar. Each step's
 // formula display also exposes clickable column references that jump back to
@@ -239,7 +239,7 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
     <>
       <section>
         <div className="ta-summary">
-          <span className="ta-name">Model Engine — preview</span>
+          <span className="ta-name">Model Engine</span>
           <span className="ta-total">
             {Object.keys(model.sources).length} sources · {model.steps.length} steps
             {model.outputs.length > 0 && ` (${model.outputs.length} marked as headline)`}
@@ -247,7 +247,7 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
           </span>
         </div>
         <p className="hint">
-          v2 declarative engine. The model is a DAG of named tables; sources and steps share one navigable list.
+          Declarative engine. The model is a DAG of named tables; sources and steps share one navigable list.
           Click any column reference in a step's formula to jump to where it came from.
         </p>
       </section>

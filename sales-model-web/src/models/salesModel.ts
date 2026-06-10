@@ -1,6 +1,5 @@
-// Full v2 expression of the existing sales/cost/employee/budget model.
-// Every value v1's `computeModel` produces should be reproducible by walking
-// this DAG.
+// Full declarative expression of the sales/cost/employee/budget model as a DAG
+// of engine sources and steps.
 //
 // Sources are mostly `manual` — they correspond to data the user edits in the
 // React UI (pricing grid, schedule, employees, etc.) and are supplied at

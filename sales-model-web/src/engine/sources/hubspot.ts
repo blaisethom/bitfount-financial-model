@@ -6,7 +6,7 @@
 //   2. `hubspotPipelineAdapter` (id: 'hubspot_pipeline') — long-format
 //      `(line_item, month_idx, value)` rows ready to drop in as the
 //      `hubspot_pipeline_t` source in the main sales model. Applies the same
-//      stage probability + payment-schedule + duration logic as the v1
+//      stage probability + payment-schedule + duration logic as the
 //      `syncHubSpot` path so numbers match the main app.
 //
 // Both call `/api/hubspot/sync` once per fetch and share the response parser.
@@ -93,7 +93,7 @@ export interface HubSpotPipelineConfig {
    *  all line items from the response". */
   existingLineItemNames?: string[];
   /** Stage probabilities, payment schedules, default duration, etc. — same
-   *  shape the v1 `syncHubSpot` consumes. */
+   *  shape the `syncHubSpot` path consumes. */
   assumptions: HubSpotSyncAssumptions;
 }
 
@@ -102,8 +102,8 @@ export const hubspotPipelineAdapter: SourceAdapter<HubSpotPipelineConfig> = {
   async fetch(config: HubSpotPipelineConfig, schema: TableSchema): Promise<Table> {
     const data = await fetchSync();
     const { hubspot } = transformDealsToHubSpotData(
-      // transformDealsToHubSpotData expects the v1-shaped response — we have
-      // the same fields by construction; the cast is only because that
+      // transformDealsToHubSpotData expects the nested HubSpotData-shaped
+      // response — we have the same fields by construction; the cast is only because that
       // function's input type is internal.
       data as unknown as Parameters<typeof transformDealsToHubSpotData>[0],
       config.modelDates,

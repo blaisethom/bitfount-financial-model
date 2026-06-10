@@ -1,10 +1,10 @@
-// Bridge from the v1 nested `ModelInput` shape to long-format engine source
-// tables. Each v1 field becomes one or more tables; the v2 model then operates
-// on those tables uniformly.
+// Bridge from the nested `ModelInput` shape to long-format engine source
+// tables. Each ModelInput field becomes one or more tables; the engine model
+// then operates on those tables uniformly.
 //
-// This is the seam that lets v1 and v2 share the same input editing surface:
-// the React app keeps its existing ModelInput in state, and we flatten on
-// demand to feed the engine.
+// This is the seam between the editing surface and the engine: the React app
+// keeps its nested ModelInput in state, and we flatten on demand to feed the
+// engine.
 
 import type { ModelInput, CostDept, PnlMetric, CostDeptMetric, BsLine } from '../types';
 import type { Table, Row, TableSchema } from '../engine';

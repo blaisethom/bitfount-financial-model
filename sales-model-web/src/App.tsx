@@ -362,8 +362,8 @@ export default function App() {
           className={`view-tab ${view === 'engine' ? 'active' : ''}`}
           onClick={() => setView('engine')}
         >
-          Engine (preview)
-          <span className="view-tab-sub">v2 declarative</span>
+          Engine
+          <span className="view-tab-sub">declarative model</span>
         </button>
       </div>
 

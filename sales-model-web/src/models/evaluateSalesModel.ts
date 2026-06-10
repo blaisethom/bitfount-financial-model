@@ -1,5 +1,5 @@
-// Run the v2 sales model against a v1 ModelInput. Flattens the input into
-// engine source tables and evaluates the full DAG.
+// Run the sales model against a ModelInput. Flattens the input into engine
+// source tables and evaluates the full DAG.
 
 import type { ModelInput } from '../types';
 import type { EvalResult, ModelDef } from '../engine';

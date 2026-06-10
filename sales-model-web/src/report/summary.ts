@@ -1,6 +1,5 @@
 // Summary stats derived from an engine eval result — used by App.tsx's header
-// and view-tab subtitles. Replaces the equivalent reductions over the v1
-// `ModelOutput`.
+// and view-tab subtitles.
 
 import type { EvalResult, Row } from '../engine';
 
