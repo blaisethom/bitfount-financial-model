@@ -14,6 +14,11 @@ import { applyEditToInput } from './report/applyEdit';
 import { engineSummary } from './report/summary';
 import { salesReport } from './report/salesReport';
 import { useUndoable } from './useUndoable';
+import ScenarioBar from './components/ScenarioBar';
+import {
+  type ScenarioStore,
+  loadStore, saveStore, computeOverrides, applyOverrides, newId,
+} from './scenarios';
 import { annualSummaryByType, contractValueHistory, highLevelType, quarterlyPivot, syncHubSpot } from './hubspot';
 import { getLineItemConfig, isClassified } from './lineItemConfig';
 
@@ -74,6 +79,18 @@ function useHashRoute(): [Route, (next: Route) => void] {
 }
 
 export default function App() {
+  // Base assumptions (code defaults). Scenarios are diffs layered on top of this.
+  const base = useMemo(() => loadInitialInput(), []);
+  const [store, setStore] = useState<ScenarioStore>(() => loadStore());
+
+  // Initial live input = the active scenario's overrides layered on base.
+  // Computed once on mount (store is read from its initial value).
+  const initialInput = useMemo(() => {
+    const active = store.scenarios.find((s) => s.id === store.activeId) ?? store.scenarios[0];
+    return applyOverrides(base, active.overrides);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const {
     state: input,
     set: setInput,
@@ -83,7 +100,73 @@ export default function App() {
     canUndo,
     canRedo,
     historyDepth,
-  } = useUndoable<ModelInput>(loadInitialInput());
+  } = useUndoable<ModelInput>(initialInput);
+
+  const activeScenario =
+    store.scenarios.find((s) => s.id === store.activeId) ?? store.scenarios[0];
+
+  // Persist the live input back into the active scenario as a set of overrides
+  // (only the top-level fields that differ from base) whenever it changes.
+  useEffect(() => {
+    setStore((prev) => {
+      const idx = prev.scenarios.findIndex((s) => s.id === prev.activeId);
+      if (idx < 0) return prev;
+      const nextOverrides = computeOverrides(base, input);
+      if (JSON.stringify(prev.scenarios[idx].overrides) === JSON.stringify(nextOverrides)) {
+        return prev;
+      }
+      const scenarios = prev.scenarios.slice();
+      scenarios[idx] = { ...scenarios[idx], overrides: nextOverrides };
+      return { ...prev, scenarios };
+    });
+  }, [input, base]);
+
+  // Persist the whole scenario store to localStorage.
+  useEffect(() => { saveStore(store); }, [store]);
+
+  const switchScenario = (id: string) => {
+    const s = store.scenarios.find((x) => x.id === id);
+    if (!s || id === store.activeId) return;
+    setStore((prev) => ({ ...prev, activeId: id }));
+    setReset(applyOverrides(base, s.overrides));
+  };
+
+  const newScenario = () => {
+    const id = newId();
+    const existing = new Set(store.scenarios.map((s) => s.name));
+    let name = `${activeScenario.name} copy`;
+    let i = 2;
+    while (existing.has(name)) name = `${activeScenario.name} copy ${i++}`;
+    setStore((prev) => ({
+      scenarios: [...prev.scenarios, { id, name, overrides: computeOverrides(base, input) }],
+      activeId: id,
+    }));
+  };
+
+  const renameScenario = (id: string, name: string) =>
+    setStore((prev) => ({
+      ...prev,
+      scenarios: prev.scenarios.map((s) => (s.id === id ? { ...s, name } : s)),
+    }));
+
+  const deleteScenario = (id: string) => {
+    if (store.scenarios.length <= 1) return;
+    const remaining = store.scenarios.filter((s) => s.id !== id);
+    const wasActive = store.activeId === id;
+    const nextActiveId = wasActive ? remaining[0].id : store.activeId;
+    setStore({ scenarios: remaining, activeId: nextActiveId });
+    if (wasActive) setReset(applyOverrides(base, remaining[0].overrides));
+  };
+
+  const resetActiveScenario = () => {
+    setStore((prev) => ({
+      ...prev,
+      scenarios: prev.scenarios.map((s) =>
+        s.id === prev.activeId ? { ...s, overrides: {} } : s),
+    }));
+    setReset(base);
+  };
+
   const [route, navigate] = useHashRoute();
   const view = route.view;
   const setView = (v: View) => navigate({ view: v });
@@ -117,7 +200,7 @@ export default function App() {
     return parts.join(' · ');
   };
 
-  const reset = () => setReset(loadInitialInput());
+  const reset = resetActiveScenario;
 
   const { modeledTotal, hubspotTotal, grandTotal, employeeTotal, opexTotal, ebitdaTotal } = summary;
 
@@ -163,6 +246,16 @@ export default function App() {
           />
         </div>
       </header>
+
+      <ScenarioBar
+        scenarios={store.scenarios}
+        activeId={store.activeId}
+        onSwitch={switchScenario}
+        onNew={newScenario}
+        onRename={renameScenario}
+        onDelete={deleteScenario}
+        onResetActive={resetActiveScenario}
+      />
 
       <div className="view-tabs" role="tablist">
         <button
