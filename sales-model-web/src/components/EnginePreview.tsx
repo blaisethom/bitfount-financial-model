@@ -11,7 +11,10 @@ import {
   type SourceDef, type Step, type Table, type TableOp,
 } from '../engine';
 import type { ReportEdit } from '../report/EngineSection';
-import { parseExpr, exprToSource, type FormulaOverrides } from '../formula';
+import {
+  parseExpr, exprToSource, parseAgg, aggToSource, aggColNames, FILTER_SLOT,
+  type FormulaOverrides,
+} from '../formula';
 import Modal from './Modal';
 
 /** Wiring that makes a manual source's value cells editable. */
@@ -582,13 +585,8 @@ function StepDetail({
         inputColumns={inputColumns}
       />
 
-      {formulaEdit && step.op.op === 'map' && (
-        <StepFormulas
-          stepOutput={step.output}
-          columns={step.op.columns}
-          inputColumns={inputColumns}
-          cfg={formulaEdit}
-        />
+      {formulaEdit && (
+        <StepFormulas step={step} inputColumns={inputColumns} cfg={formulaEdit} />
       )}
 
       <div className="engine-section-label">Output <code className="engine-ref">{step.output}</code></div>
@@ -1040,92 +1038,130 @@ function EditableCell({ value, type, onCommit }: {
   );
 }
 
-// ─── Formula definition editor (map steps) ──────────────────────────────────
+// ─── Formula definition editor (all step types) ─────────────────────────────
 
-function StepFormulas({ stepOutput, columns, inputColumns, cfg }: {
-  stepOutput: string;
-  columns: Record<string, Expr>;
+/** One editable expression "slot" within a step's operation. */
+interface EditSlot { slot: string; label: string; kind: 'expr' | 'agg'; source: string }
+
+/** The editable expressions a step exposes. Structural ops (join / select /
+ *  rename / sort / limit / union) have none. */
+function editSlots(op: TableOp): EditSlot[] {
+  switch (op.op) {
+    case 'map':
+      return Object.entries(op.columns).map(([c, e]) => ({ slot: c, label: c, kind: 'expr', source: exprToSource(e) }));
+    case 'filter':
+      return [{ slot: FILTER_SLOT, label: 'keep rows where', kind: 'expr', source: exprToSource(op.predicate) }];
+    case 'groupBy':
+      return Object.entries(op.aggs).map(([c, a]) => ({ slot: c, label: c, kind: 'agg', source: aggToSource(a) }));
+    case 'window':
+      return Object.entries(op.derive).map(([c, a]) => ({ slot: c, label: c, kind: 'agg', source: aggToSource(a) }));
+    default:
+      return [];
+  }
+}
+
+function StepFormulas({ step, inputColumns, cfg }: {
+  step: Step;
   inputColumns: Set<string>;
   cfg: FormulaEditConfig;
 }) {
+  const slots = editSlots(step.op);
   return (
-    <>
+    <div className="engine-formula-block">
       <div className="engine-section-label">
-        Formula definitions {cfg.enabled ? '(editable — applies to the base model)' : '(read-only)'}
+        Edit formula {cfg.enabled ? '(applies to the base model)' : '(read-only)'}
       </div>
-      {!cfg.enabled && (
+      {!cfg.enabled && slots.length > 0 && (
         <p className="hint" style={{ marginTop: -4 }}>
-          Switch to the <strong>Base case</strong> scenario to edit formula definitions. Formula
-          edits apply to the underlying model, so every scenario sees them.
+          Switch to the <strong>Base case</strong> scenario to edit. Formula edits apply to the
+          underlying model, so every scenario sees them.
         </p>
       )}
-      <div className="engine-formula-list">
-        {Object.entries(columns).map(([col, expr]) => (
-          <FormulaRow
-            key={col}
-            stepOutput={stepOutput}
-            col={col}
-            expr={expr}
-            inputColumns={inputColumns}
-            overridden={Boolean(cfg.overrides[stepOutput]?.[col])}
-            enabled={cfg.enabled}
-            onSet={cfg.onSet}
-            onReset={cfg.onReset}
-          />
-        ))}
-      </div>
-    </>
+      {slots.length === 0 ? (
+        <p className="hint" style={{ marginTop: -4 }}>
+          This <code className="engine-ref">{step.op.op}</code> step is structural (it reshapes
+          rows/columns) — it has no editable formula.
+        </p>
+      ) : (
+        <div className="engine-formula-list">
+          {slots.map((s) => (
+            <FormulaRow
+              key={s.slot}
+              stepOutput={step.output}
+              slot={s.slot}
+              label={s.label}
+              kind={s.kind}
+              source={s.source}
+              inputColumns={inputColumns}
+              overridden={Boolean(cfg.overrides[step.output]?.[s.slot])}
+              enabled={cfg.enabled}
+              onSet={cfg.onSet}
+              onReset={cfg.onReset}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function FormulaRow({ stepOutput, col, expr, inputColumns, overridden, enabled, onSet, onReset }: {
+function FormulaRow({ stepOutput, slot, label, kind, source, inputColumns, overridden, enabled, onSet, onReset }: {
   stepOutput: string;
-  col: string;
-  expr: Expr;
+  slot: string;
+  label: string;
+  kind: 'expr' | 'agg';
+  source: string;
   inputColumns: Set<string>;
   overridden: boolean;
   enabled: boolean;
-  onSet: (stepOutput: string, col: string, src: string) => void;
-  onReset: (stepOutput: string, col: string) => void;
+  onSet: (stepOutput: string, slot: string, src: string) => void;
+  onReset: (stepOutput: string, slot: string) => void;
 }) {
-  const source = exprToSource(expr);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const isFilter = slot === FILTER_SLOT;
 
   const start = () => { setDraft(source); setErr(null); setEditing(true); };
   const save = () => {
-    let parsed;
-    try { parsed = parseExpr(draft); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); return; }
-    // Warn (don't block) if the formula references columns not in this step's input.
-    const unknown = collectColNames(parsed).filter((c) => !inputColumns.has(c));
+    let cols: string[];
+    try {
+      cols = kind === 'expr' ? collectColNames(parseExpr(draft)) : aggColNames(parseAgg(draft));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const unknown = cols.filter((c) => !inputColumns.has(c));
     if (unknown.length) {
       setErr(`Unknown column${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')} — must be one of the input columns below.`);
       return;
     }
-    onSet(stepOutput, col, draft);
+    onSet(stepOutput, slot, draft);
     setEditing(false);
   };
+
+  const head = (
+    <>
+      <code className="engine-ref engine-formula-col">{label}</code>
+      {!isFilter && <span className="engine-formula-eq">=</span>}
+    </>
+  );
 
   if (!editing) {
     return (
       <div className="engine-formula-row">
-        <code className="engine-ref engine-formula-col">{col}</code>
-        <span className="engine-formula-eq">=</span>
+        {head}
         <code className="engine-formula-src">{source}</code>
         {overridden && <span className="engine-formula-modified" title="Overridden vs the code default">modified</span>}
         {enabled && <button className="scenario-link" onClick={start}>Edit</button>}
-        {overridden && <button className="scenario-link" onClick={() => onReset(stepOutput, col)}>Reset</button>}
+        {overridden && <button className="scenario-link" onClick={() => onReset(stepOutput, slot)}>Reset</button>}
       </div>
     );
   }
 
   return (
     <div className="engine-formula-row engine-formula-row--editing">
-      <div className="engine-formula-edit-head">
-        <code className="engine-ref engine-formula-col">{col}</code>
-        <span className="engine-formula-eq">=</span>
-      </div>
+      <div className="engine-formula-edit-head">{head}</div>
       <textarea
         autoFocus
         className="engine-formula-input"
@@ -1143,6 +1179,9 @@ function FormulaRow({ stepOutput, col, expr, inputColumns, overridden, enabled, 
         <button className="scenario-link" onClick={() => setEditing(false)}>Cancel</button>
       </div>
       <div className="hint engine-formula-cols">
+        {kind === 'agg'
+          ? 'Aggregation: fn(column) — sum, count, avg, min, max, first, last. '
+          : ''}
         Columns in scope: {[...inputColumns].sort().join(', ') || '(none)'}
       </div>
     </div>

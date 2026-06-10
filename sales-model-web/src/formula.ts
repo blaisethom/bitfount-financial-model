@@ -5,7 +5,7 @@
 // formula can be shown as editable text. A model patch layer (`applyFormula
 // Overrides`) swaps edited column formulas into a ModelDef before evaluation.
 
-import type { Expr, BinaryOp, FunctionName, ModelDef, Step } from './engine';
+import type { Expr, BinaryOp, FunctionName, ModelDef, Step, AggExpr, AggFn } from './engine';
 
 const FUNCTIONS = new Set<string>([
   'min', 'max', 'if', 'abs', 'round', 'concat', 'coalesce', 'pow',
@@ -192,29 +192,83 @@ export function exprToSource(expr: Expr, parentPrec = 0): string {
   }
 }
 
+// ─── Aggregations (groupBy / window) ────────────────────────────────────────
+
+const AGG_FNS = new Set<string>(['sum', 'count', 'avg', 'min', 'max', 'first', 'last']);
+
+/** Parse an aggregation like `sum(value)`, `max(month_idx)`, or `count()`. */
+export function parseAgg(src: string): AggExpr {
+  const m = src.trim().match(/^([A-Za-z_]\w*)\s*\(\s*(\*|[A-Za-z_]\w*)?\s*\)$/);
+  if (!m) throw new Error('Expected an aggregation like sum(column) or count()');
+  const fn = m[1].toLowerCase();
+  if (!AGG_FNS.has(fn)) throw new Error(`Unknown aggregation "${m[1]}". Use one of: ${[...AGG_FNS].join(', ')}`);
+  const col = m[2];
+  const column = !col || col === '*' ? null : col;
+  if (fn !== 'count' && column === null) throw new Error(`${fn}(...) needs a column, e.g. ${fn}(value)`);
+  return { fn: fn as AggFn, column };
+}
+
+export function aggToSource(a: AggExpr): string {
+  return `${a.fn}(${a.column ?? ''})`;
+}
+
+/** Column names referenced by an aggregation (none for count(*)). */
+export function aggColNames(a: AggExpr): string[] {
+  return a.column ? [a.column] : [];
+}
+
 // ─── Model patching ──────────────────────────────────────────────────────────
 
-/** Per-step, per-column formula source overrides. */
+/** Per-step formula source overrides, keyed by a "slot":
+ *  - map:    the output column name
+ *  - filter: the literal slot `$predicate`
+ *  - groupBy/window: the derived (output) column name */
 export type FormulaOverrides = Record<string, Record<string, string>>;
 
-/** Column refs available to a map step = its input table's columns. Used by the
- *  editor to validate / hint which identifiers are in scope. */
+export const FILTER_SLOT = '$predicate';
+
+/** Patch a model's step formulas from the override sources. An override that
+ *  fails to parse is skipped, leaving the original definition in place. */
 export function applyFormulaOverrides(model: ModelDef, overrides: FormulaOverrides): ModelDef {
   if (!overrides || Object.keys(overrides).length === 0) return model;
   const steps: Step[] = model.steps.map((step) => {
     const stepOv = overrides[step.output];
-    if (!stepOv || step.op.op !== 'map') return step;
-    const columns = { ...step.op.columns };
-    for (const [col, src] of Object.entries(stepOv)) {
-      try {
-        columns[col] = parseExpr(src);
-      } catch {
-        // Leave the original formula in place if the override won't parse.
+    if (!stepOv) return step;
+    const op = step.op;
+    try {
+      switch (op.op) {
+        case 'map': {
+          const columns = { ...op.columns };
+          for (const [col, src] of Object.entries(stepOv)) tryAssign(columns, col, () => parseExpr(src));
+          return { ...step, op: { ...op, columns } };
+        }
+        case 'filter': {
+          if (stepOv[FILTER_SLOT] === undefined) return step;
+          try { return { ...step, op: { ...op, predicate: parseExpr(stepOv[FILTER_SLOT]) } }; }
+          catch { return step; }
+        }
+        case 'groupBy': {
+          const aggs = { ...op.aggs };
+          for (const [col, src] of Object.entries(stepOv)) tryAssign(aggs, col, () => parseAgg(src));
+          return { ...step, op: { ...op, aggs } };
+        }
+        case 'window': {
+          const derive = { ...op.derive };
+          for (const [col, src] of Object.entries(stepOv)) tryAssign(derive, col, () => parseAgg(src));
+          return { ...step, op: { ...op, derive } };
+        }
+        default:
+          return step; // structural ops have no editable formula
       }
+    } catch {
+      return step;
     }
-    return { ...step, op: { ...step.op, columns } };
   });
   return { ...model, steps };
+}
+
+function tryAssign<T>(target: Record<string, T>, key: string, make: () => T): void {
+  try { target[key] = make(); } catch { /* keep original */ }
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
