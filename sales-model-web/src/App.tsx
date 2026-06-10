@@ -20,6 +20,10 @@ import {
   type ScenarioStore,
   loadStore, saveStore, computeOverrides, applyOverrides, newId,
 } from './scenarios';
+import {
+  type FormulaOverrides,
+  loadFormulaOverrides, saveFormulaOverrides, applyFormulaOverrides,
+} from './formula';
 import { annualSummaryByType, contractValueHistory, highLevelType, quarterlyPivot, syncHubSpot } from './hubspot';
 import { getLineItemConfig, isClassified } from './lineItemConfig';
 
@@ -174,7 +178,23 @@ export default function App() {
   const setEngineRef = (ref: string) => navigate({ view: 'engine', ref });
   const [lastSyncMeta, setLastSyncMeta] = useState<import('./hubspot').SyncResult['meta'] | null>(null);
 
-  const engineResult = useMemo(() => evaluateSalesModel(input), [input]);
+  // Formula-definition overrides patch the model itself (base case / model-wide).
+  const [formulaOverrides, setFormulaOverrides] = useState<FormulaOverrides>(() => loadFormulaOverrides());
+  useEffect(() => { saveFormulaOverrides(formulaOverrides); }, [formulaOverrides]);
+  const patchedModel = useMemo(() => applyFormulaOverrides(salesModel, formulaOverrides), [formulaOverrides]);
+
+  const setFormula = (stepOutput: string, col: string, src: string) =>
+    setFormulaOverrides((prev) => ({ ...prev, [stepOutput]: { ...prev[stepOutput], [col]: src } }));
+  const resetFormula = (stepOutput: string, col: string) =>
+    setFormulaOverrides((prev) => {
+      const step = { ...prev[stepOutput] };
+      delete step[col];
+      const next = { ...prev, [stepOutput]: step };
+      if (Object.keys(step).length === 0) delete next[stepOutput];
+      return next;
+    });
+
+  const engineResult = useMemo(() => evaluateSalesModel(input, patchedModel), [input, patchedModel]);
   const summary = useMemo(() => engineSummary(engineResult), [engineResult]);
   const handleReportEdit = (edit: Parameters<typeof applyEditToInput>[1]) =>
     setInput((prev) => applyEditToInput(prev, edit));
@@ -374,13 +394,19 @@ export default function App() {
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="balance-sheet" onEdit={handleReportEdit} />
       ) : view === 'engine' ? (
         <EnginePreview
-          model={salesModel}
+          model={patchedModel}
           result={engineResult}
           currentRef={route.ref}
           onRefChange={setEngineRef}
           onEdit={handleReportEdit}
           editableSources={EDITABLE_SOURCES}
           identityFor={(ref) => SOURCE_IDENTITY[ref] ?? []}
+          formulaEdit={{
+            overrides: formulaOverrides,
+            enabled: store.activeId === store.scenarios[0]?.id,
+            onSet: setFormula,
+            onReset: resetFormula,
+          }}
         />
       ) : (
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="budget" onEdit={handleReportEdit} />

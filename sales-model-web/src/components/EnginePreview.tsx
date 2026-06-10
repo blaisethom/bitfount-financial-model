@@ -11,6 +11,7 @@ import {
   type SourceDef, type Step, type Table, type TableOp,
 } from '../engine';
 import type { ReportEdit } from '../report/EngineSection';
+import { parseExpr, exprToSource, type FormulaOverrides } from '../formula';
 import Modal from './Modal';
 
 /** Wiring that makes a manual source's value cells editable. */
@@ -19,6 +20,15 @@ interface EditConfig {
   /** Identity columns for this source (used to address the edited row). */
   idKeys: string[];
   onEdit: (e: ReportEdit) => void;
+}
+
+/** Wiring for editing a map step's column formulas (model-wide / base case). */
+interface FormulaEditConfig {
+  overrides: FormulaOverrides;
+  /** Whether editing is allowed right now (base case active). */
+  enabled: boolean;
+  onSet: (stepOutput: string, col: string, src: string) => void;
+  onReset: (stepOutput: string, col: string) => void;
 }
 
 /** Build a row's identity object from its identity columns. */
@@ -52,6 +62,8 @@ interface Props {
   editableSources?: ReadonlySet<string>;
   /** Identity columns for a given source ref. */
   identityFor?: (ref: string) => string[];
+  /** When provided, map-step column formulas become editable. */
+  formulaEdit?: FormulaEditConfig;
 }
 
 interface ExpandedTable {
@@ -81,7 +93,7 @@ function stepInputRefs(step: Step): string[] {
   return refs;
 }
 
-export default function EnginePreview({ model, result: passedResult, currentRef, onRefChange, onEdit, editableSources, identityFor }: Props) {
+export default function EnginePreview({ model, result: passedResult, currentRef, onRefChange, onEdit, editableSources, identityFor, formulaEdit }: Props) {
   const result = useMemo(
     () => passedResult ?? evaluateModel(model),
     [model, passedResult],
@@ -325,6 +337,7 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
                     onJumpToRef={jumpToRef}
                     onJumpToTraceIdx={(i) => goToIdx(traceIdxToNodeIdx(i))}
                     onExpand={openFull}
+                    formulaEdit={formulaEdit}
                   />
             )}
           </div>
@@ -526,11 +539,12 @@ interface StepDetailProps {
   onJumpToRef: (ref: string) => void;
   onJumpToTraceIdx: (traceIdx: number) => void;
   onExpand: (title: string, table: Table, pivot?: boolean) => void;
+  formulaEdit?: FormulaEditConfig;
 }
 
 function StepDetail({
   step, input, inputRef, output, headline, inputRefs, resolveTable,
-  usages, trace, dateMap, axis, onJumpToRef, onJumpToTraceIdx, onExpand,
+  usages, trace, dateMap, axis, onJumpToRef, onJumpToTraceIdx, onExpand, formulaEdit,
 }: StepDetailProps) {
   // Valid column names in the primary input — column references in the
   // formula that match these are clickable and jump to the input ref.
@@ -567,6 +581,15 @@ function StepDetail({
         onTableClick={onJumpToRef}
         inputColumns={inputColumns}
       />
+
+      {formulaEdit && step.op.op === 'map' && (
+        <StepFormulas
+          stepOutput={step.output}
+          columns={step.op.columns}
+          inputColumns={inputColumns}
+          cfg={formulaEdit}
+        />
+      )}
 
       <div className="engine-section-label">Output <code className="engine-ref">{step.output}</code></div>
       <SourceTablePreview
@@ -1015,6 +1038,126 @@ function EditableCell({ value, type, onCommit }: {
       style={{ width: '100%', textAlign: type === 'number' ? 'right' : 'left' }}
     />
   );
+}
+
+// ─── Formula definition editor (map steps) ──────────────────────────────────
+
+function StepFormulas({ stepOutput, columns, inputColumns, cfg }: {
+  stepOutput: string;
+  columns: Record<string, Expr>;
+  inputColumns: Set<string>;
+  cfg: FormulaEditConfig;
+}) {
+  return (
+    <>
+      <div className="engine-section-label">
+        Formula definitions {cfg.enabled ? '(editable — applies to the base model)' : '(read-only)'}
+      </div>
+      {!cfg.enabled && (
+        <p className="hint" style={{ marginTop: -4 }}>
+          Switch to the <strong>Base case</strong> scenario to edit formula definitions. Formula
+          edits apply to the underlying model, so every scenario sees them.
+        </p>
+      )}
+      <div className="engine-formula-list">
+        {Object.entries(columns).map(([col, expr]) => (
+          <FormulaRow
+            key={col}
+            stepOutput={stepOutput}
+            col={col}
+            expr={expr}
+            inputColumns={inputColumns}
+            overridden={Boolean(cfg.overrides[stepOutput]?.[col])}
+            enabled={cfg.enabled}
+            onSet={cfg.onSet}
+            onReset={cfg.onReset}
+          />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function FormulaRow({ stepOutput, col, expr, inputColumns, overridden, enabled, onSet, onReset }: {
+  stepOutput: string;
+  col: string;
+  expr: Expr;
+  inputColumns: Set<string>;
+  overridden: boolean;
+  enabled: boolean;
+  onSet: (stepOutput: string, col: string, src: string) => void;
+  onReset: (stepOutput: string, col: string) => void;
+}) {
+  const source = exprToSource(expr);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  const start = () => { setDraft(source); setErr(null); setEditing(true); };
+  const save = () => {
+    let parsed;
+    try { parsed = parseExpr(draft); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); return; }
+    // Warn (don't block) if the formula references columns not in this step's input.
+    const unknown = collectColNames(parsed).filter((c) => !inputColumns.has(c));
+    if (unknown.length) {
+      setErr(`Unknown column${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')} — must be one of the input columns below.`);
+      return;
+    }
+    onSet(stepOutput, col, draft);
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <div className="engine-formula-row">
+        <code className="engine-ref engine-formula-col">{col}</code>
+        <span className="engine-formula-eq">=</span>
+        <code className="engine-formula-src">{source}</code>
+        {overridden && <span className="engine-formula-modified" title="Overridden vs the code default">modified</span>}
+        {enabled && <button className="scenario-link" onClick={start}>Edit</button>}
+        {overridden && <button className="scenario-link" onClick={() => onReset(stepOutput, col)}>Reset</button>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="engine-formula-row engine-formula-row--editing">
+      <div className="engine-formula-edit-head">
+        <code className="engine-ref engine-formula-col">{col}</code>
+        <span className="engine-formula-eq">=</span>
+      </div>
+      <textarea
+        autoFocus
+        className="engine-formula-input"
+        value={draft}
+        spellCheck={false}
+        onChange={(e) => { setDraft(e.target.value); setErr(null); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+          if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
+        }}
+      />
+      {err && <div className="engine-formula-err">{err}</div>}
+      <div className="engine-formula-actions">
+        <button className="btn" onClick={save}>Save (⌘↵)</button>
+        <button className="scenario-link" onClick={() => setEditing(false)}>Cancel</button>
+      </div>
+      <div className="hint engine-formula-cols">
+        Columns in scope: {[...inputColumns].sort().join(', ') || '(none)'}
+      </div>
+    </div>
+  );
+}
+
+/** All distinct column names referenced by an expression. */
+function collectColNames(e: Expr, out: Set<string> = new Set()): string[] {
+  switch (e.node) {
+    case 'col': out.add(e.name); break;
+    case 'unary': collectColNames(e.operand, out); break;
+    case 'binary': collectColNames(e.left, out); collectColNames(e.right, out); break;
+    case 'fn': e.args.forEach((a) => collectColNames(a, out)); break;
+  }
+  return [...out];
 }
 
 interface SourceTablePreviewProps {

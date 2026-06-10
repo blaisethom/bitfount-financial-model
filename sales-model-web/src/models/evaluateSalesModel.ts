@@ -2,15 +2,18 @@
 // engine source tables and evaluates the full DAG.
 
 import type { ModelInput } from '../types';
-import type { EvalResult } from '../engine';
+import type { EvalResult, ModelDef } from '../engine';
 import { evaluateModel, getSourceAdapter } from '../engine';
 import type { HubSpotPipelineConfig } from '../engine/sources/hubspot';
 import { flattenModelInput } from './flatten';
 import { salesModel } from './salesModel';
 
-export function evaluateSalesModel(input: ModelInput): EvalResult {
+/** Evaluate the sales model against an input. `model` defaults to the static
+ *  `salesModel`; pass a formula-patched variant (see applyFormulaOverrides) to
+ *  evaluate with edited formula definitions. */
+export function evaluateSalesModel(input: ModelInput, model: ModelDef = salesModel): EvalResult {
   const { tables } = flattenModelInput(input);
-  return evaluateModel(salesModel, { prefetchedSources: tables });
+  return evaluateModel(model, { prefetchedSources: tables });
 }
 
 /**
