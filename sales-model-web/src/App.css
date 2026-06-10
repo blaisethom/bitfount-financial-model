@@ -1412,3 +1412,39 @@ section h3 {
   border-radius: 6px;
 }
 .engine-formula-cols { margin-top: 0.4rem; font-size: 0.72rem; word-break: break-word; }
+
+/* ── Engine Preview: inline formula pencil ──────────────────────────────── */
+.engine-formula-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 1px 0;
+}
+.engine-formula-line-toks { white-space: pre-wrap; word-break: break-word; }
+.engine-formula-line-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.engine-formula-pencil {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--accent);
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0.4;
+  transition: opacity 0.1s;
+}
+.engine-formula-line:hover .engine-formula-pencil,
+.engine-formula-pencil:focus-visible,
+.engine-formula-pencil:hover { opacity: 1; }
+.engine-formula-editor {
+  flex-basis: 100%;
+  margin-top: 0.35rem;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.engine-formula-note { margin: 0.5rem 0 0; }

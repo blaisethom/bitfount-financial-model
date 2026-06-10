@@ -583,11 +583,9 @@ function StepDetail({
         onColClick={handleColClick}
         onTableClick={onJumpToRef}
         inputColumns={inputColumns}
+        formulaEdit={formulaEdit}
+        stepOutput={step.output}
       />
-
-      {formulaEdit && (
-        <StepFormulas step={step} inputColumns={inputColumns} cfg={formulaEdit} />
-      )}
 
       <div className="engine-section-label">Output <code className="engine-ref">{step.output}</code></div>
       <SourceTablePreview
@@ -681,10 +679,18 @@ interface FormulaDisplayProps {
   inputColumns: Set<string>;
   onColClick: (name: string) => void;
   onTableClick: (ref: string) => void;
+  /** When provided, an edit pencil appears on each editable formula line. */
+  formulaEdit?: FormulaEditConfig;
+  stepOutput: string;
 }
 
-function FormulaDisplay({ op, inputRef, onColClick, onTableClick, inputColumns }: FormulaDisplayProps) {
+function FormulaDisplay({ op, inputRef, onColClick, onTableClick, inputColumns, formulaEdit, stepOutput }: FormulaDisplayProps) {
   const p = prettyOp(op, inputRef);
+  const slots = formulaEdit ? editSlots(op) : [];
+  const [editingSlot, setEditingSlot] = useState<string | null>(null);
+  // Close any open editor when navigating to a different step.
+  useEffect(() => { setEditingSlot(null); }, [stepOutput]);
+
   const renderTok = (tok: Tok, j: number) => {
     if (tok.kind === 'text') return <span key={j}>{tok.text}</span>;
     if (tok.kind === 'tableRef') {
@@ -714,21 +720,117 @@ function FormulaDisplay({ op, inputRef, onColClick, onTableClick, inputColumns }
       </button>
     );
   };
+
   return (
     <div className="engine-formula">
       <div className="engine-formula-head">
         {p.head.map(renderTok)}
       </div>
       {p.lines.length > 0 && (
-        <pre className="engine-formula-body">
-          {p.lines.map((line, i) => (
-            <span key={i}>
-              {line.map(renderTok)}
-              {i < p.lines.length - 1 && '\n'}
-            </span>
-          ))}
-        </pre>
+        <div className="engine-formula-body">
+          {p.lines.map((line, i) => {
+            const s = slots[i]; // aligned 1:1 with lines for editable ops
+            const overridden = !!(s && formulaEdit && formulaEdit.overrides[stepOutput]?.[s.slot]);
+            return (
+              <div key={i} className="engine-formula-line">
+                <span className="engine-formula-line-toks">{line.map(renderTok)}</span>
+                {s && formulaEdit && (
+                  <span className="engine-formula-line-actions">
+                    {overridden && (
+                      <span className="engine-formula-modified" title="Overridden vs the code default">modified</span>
+                    )}
+                    {formulaEdit.enabled && (
+                      <button
+                        type="button"
+                        className="engine-formula-pencil"
+                        title="Edit this formula"
+                        aria-label={`Edit formula for ${s.label}`}
+                        onClick={() => setEditingSlot((cur) => (cur === s.slot ? null : s.slot))}
+                      >
+                        ✎
+                      </button>
+                    )}
+                    {overridden && (
+                      <button type="button" className="scenario-link" onClick={() => formulaEdit.onReset(stepOutput, s.slot)}>
+                        reset
+                      </button>
+                    )}
+                  </span>
+                )}
+                {s && formulaEdit && editingSlot === s.slot && (
+                  <InlineFormulaEditor
+                    slot={s}
+                    inputColumns={inputColumns}
+                    onSave={(src) => { formulaEdit.onSet(stepOutput, s.slot, src); setEditingSlot(null); }}
+                    onCancel={() => setEditingSlot(null)}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
+      {formulaEdit && slots.length === 0 && (
+        <p className="hint engine-formula-note">
+          Structural step — it reshapes rows/columns and has no per-cell formula to edit.
+        </p>
+      )}
+      {formulaEdit && slots.length > 0 && !formulaEdit.enabled && (
+        <p className="hint engine-formula-note">
+          Switch to the <strong>Base case</strong> scenario to edit (formula edits apply model-wide).
+        </p>
+      )}
+    </div>
+  );
+}
+
+function InlineFormulaEditor({ slot, inputColumns, onSave, onCancel }: {
+  slot: EditSlot;
+  inputColumns: Set<string>;
+  onSave: (src: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(slot.source);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = () => {
+    let cols: string[];
+    try {
+      cols = slot.kind === 'expr' ? collectColNames(parseExpr(draft)) : aggColNames(parseAgg(draft));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const unknown = cols.filter((c) => !inputColumns.has(c));
+    if (unknown.length) {
+      setErr(`Unknown column${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')} — must be one of the input columns below.`);
+      return;
+    }
+    onSave(draft);
+  };
+
+  return (
+    <div className="engine-formula-editor">
+      <textarea
+        autoFocus
+        className="engine-formula-input"
+        value={draft}
+        spellCheck={false}
+        onChange={(e) => { setDraft(e.target.value); setErr(null); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        }}
+      />
+      {err && <div className="engine-formula-err">{err}</div>}
+      <div className="engine-formula-actions">
+        <button className="btn" onClick={save}>Save (⌘↵)</button>
+        <button className="scenario-link" onClick={onCancel}>Cancel</button>
+      </div>
+      <div className="hint engine-formula-cols">
+        {slot.kind === 'agg' ? 'Aggregation: fn(column) — sum, count, avg, min, max, first, last. ' : ''}
+        Columns in scope: {[...inputColumns].sort().join(', ') || '(none)'}
+      </div>
     </div>
   );
 }
@@ -1058,134 +1160,6 @@ function editSlots(op: TableOp): EditSlot[] {
     default:
       return [];
   }
-}
-
-function StepFormulas({ step, inputColumns, cfg }: {
-  step: Step;
-  inputColumns: Set<string>;
-  cfg: FormulaEditConfig;
-}) {
-  const slots = editSlots(step.op);
-  return (
-    <div className="engine-formula-block">
-      <div className="engine-section-label">
-        Edit formula {cfg.enabled ? '(applies to the base model)' : '(read-only)'}
-      </div>
-      {!cfg.enabled && slots.length > 0 && (
-        <p className="hint" style={{ marginTop: -4 }}>
-          Switch to the <strong>Base case</strong> scenario to edit. Formula edits apply to the
-          underlying model, so every scenario sees them.
-        </p>
-      )}
-      {slots.length === 0 ? (
-        <p className="hint" style={{ marginTop: -4 }}>
-          This <code className="engine-ref">{step.op.op}</code> step is structural (it reshapes
-          rows/columns) — it has no editable formula.
-        </p>
-      ) : (
-        <div className="engine-formula-list">
-          {slots.map((s) => (
-            <FormulaRow
-              key={s.slot}
-              stepOutput={step.output}
-              slot={s.slot}
-              label={s.label}
-              kind={s.kind}
-              source={s.source}
-              inputColumns={inputColumns}
-              overridden={Boolean(cfg.overrides[step.output]?.[s.slot])}
-              enabled={cfg.enabled}
-              onSet={cfg.onSet}
-              onReset={cfg.onReset}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FormulaRow({ stepOutput, slot, label, kind, source, inputColumns, overridden, enabled, onSet, onReset }: {
-  stepOutput: string;
-  slot: string;
-  label: string;
-  kind: 'expr' | 'agg';
-  source: string;
-  inputColumns: Set<string>;
-  overridden: boolean;
-  enabled: boolean;
-  onSet: (stepOutput: string, slot: string, src: string) => void;
-  onReset: (stepOutput: string, slot: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const isFilter = slot === FILTER_SLOT;
-
-  const start = () => { setDraft(source); setErr(null); setEditing(true); };
-  const save = () => {
-    let cols: string[];
-    try {
-      cols = kind === 'expr' ? collectColNames(parseExpr(draft)) : aggColNames(parseAgg(draft));
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-      return;
-    }
-    const unknown = cols.filter((c) => !inputColumns.has(c));
-    if (unknown.length) {
-      setErr(`Unknown column${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')} — must be one of the input columns below.`);
-      return;
-    }
-    onSet(stepOutput, slot, draft);
-    setEditing(false);
-  };
-
-  const head = (
-    <>
-      <code className="engine-ref engine-formula-col">{label}</code>
-      {!isFilter && <span className="engine-formula-eq">=</span>}
-    </>
-  );
-
-  if (!editing) {
-    return (
-      <div className="engine-formula-row">
-        {head}
-        <code className="engine-formula-src">{source}</code>
-        {overridden && <span className="engine-formula-modified" title="Overridden vs the code default">modified</span>}
-        {enabled && <button className="scenario-link" onClick={start}>Edit</button>}
-        {overridden && <button className="scenario-link" onClick={() => onReset(stepOutput, slot)}>Reset</button>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="engine-formula-row engine-formula-row--editing">
-      <div className="engine-formula-edit-head">{head}</div>
-      <textarea
-        autoFocus
-        className="engine-formula-input"
-        value={draft}
-        spellCheck={false}
-        onChange={(e) => { setDraft(e.target.value); setErr(null); }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
-          if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
-        }}
-      />
-      {err && <div className="engine-formula-err">{err}</div>}
-      <div className="engine-formula-actions">
-        <button className="btn" onClick={save}>Save (⌘↵)</button>
-        <button className="scenario-link" onClick={() => setEditing(false)}>Cancel</button>
-      </div>
-      <div className="hint engine-formula-cols">
-        {kind === 'agg'
-          ? 'Aggregation: fn(column) — sum, count, avg, min, max, first, last. '
-          : ''}
-        Columns in scope: {[...inputColumns].sort().join(', ') || '(none)'}
-      </div>
-    </div>
-  );
 }
 
 /** All distinct column names referenced by an expression. */
