@@ -178,23 +178,49 @@ export default function App() {
   const setEngineRef = (ref: string) => navigate({ view: 'engine', ref });
   const [lastSyncMeta, setLastSyncMeta] = useState<import('./hubspot').SyncResult['meta'] | null>(null);
 
-  // Formula-definition overrides patch the model itself (base case / model-wide).
+  // Formula / operation overrides patch the model itself (base case / model-wide).
   const [formulaOverrides, setFormulaOverrides] = useState<FormulaOverrides>(() => loadFormulaOverrides());
   useEffect(() => { saveFormulaOverrides(formulaOverrides); }, [formulaOverrides]);
   const patchedModel = useMemo(() => applyFormulaOverrides(salesModel, formulaOverrides), [formulaOverrides]);
 
-  const setFormula = (stepOutput: string, col: string, src: string) =>
-    setFormulaOverrides((prev) => ({ ...prev, [stepOutput]: { ...prev[stepOutput], [col]: src } }));
-  const resetFormula = (stepOutput: string, col: string) =>
+  // Evaluate with the patched model. If a (stale) override makes the model
+  // un-evaluable, fall back to the base model and surface an error banner so
+  // the app never white-screens.
+  const { engineResult, modelForView, evalError } = useMemo(() => {
+    try {
+      return { engineResult: evaluateSalesModel(input, patchedModel), modelForView: patchedModel, evalError: null as string | null };
+    } catch (e) {
+      return {
+        engineResult: evaluateSalesModel(input, salesModel),
+        modelForView: salesModel,
+        evalError: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }, [input, patchedModel]);
+
+  // Commit a formula/operation edit only if it parses (strict) AND the model
+  // still evaluates; returns an error string to show in the editor, or null.
+  const setFormula = (stepOutput: string, slot: string, src: string): string | null => {
+    const next = { ...formulaOverrides, [stepOutput]: { ...formulaOverrides[stepOutput], [slot]: src } };
+    try {
+      const m = applyFormulaOverrides(salesModel, next, { strict: true });
+      evaluateSalesModel(input, m); // throws on invalid refs / cycles
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+    setFormulaOverrides(next);
+    return null;
+  };
+  const resetFormula = (stepOutput: string, slot: string) =>
     setFormulaOverrides((prev) => {
       const step = { ...prev[stepOutput] };
-      delete step[col];
+      delete step[slot];
       const next = { ...prev, [stepOutput]: step };
       if (Object.keys(step).length === 0) delete next[stepOutput];
       return next;
     });
+  const clearFormulaOverrides = () => setFormulaOverrides({});
 
-  const engineResult = useMemo(() => evaluateSalesModel(input, patchedModel), [input, patchedModel]);
   const summary = useMemo(() => engineSummary(engineResult), [engineResult]);
   const handleReportEdit = (edit: Parameters<typeof applyEditToInput>[1]) =>
     setInput((prev) => applyEditToInput(prev, edit));
@@ -277,6 +303,15 @@ export default function App() {
         onDelete={deleteScenario}
         onResetActive={resetActiveScenario}
       />
+
+      {evalError && (
+        <div className="model-error-banner" role="alert">
+          <span>
+            <strong>Model edits couldn't be applied:</strong> {evalError} — showing the base model.
+          </span>
+          <button className="btn" onClick={clearFormulaOverrides}>Clear all model edits</button>
+        </div>
+      )}
 
       <div className="view-tabs" role="tablist">
         <button
@@ -394,7 +429,7 @@ export default function App() {
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="balance-sheet" onEdit={handleReportEdit} />
       ) : view === 'engine' ? (
         <EnginePreview
-          model={patchedModel}
+          model={modelForView}
           result={engineResult}
           currentRef={route.ref}
           onRefChange={setEngineRef}

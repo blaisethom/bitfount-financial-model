@@ -12,7 +12,7 @@ import {
 } from '../engine';
 import type { ReportEdit } from '../report/EngineSection';
 import {
-  parseExpr, exprToSource, parseAgg, aggToSource, aggColNames, FILTER_SLOT,
+  parseExpr, exprToSource, parseAgg, aggToSource, aggColNames, FILTER_SLOT, STRUCT,
   type FormulaOverrides,
 } from '../formula';
 import Modal from './Modal';
@@ -25,13 +25,14 @@ interface EditConfig {
   onEdit: (e: ReportEdit) => void;
 }
 
-/** Wiring for editing a map step's column formulas (model-wide / base case). */
+/** Wiring for editing a step's formulas + structural params (model-wide / base case). */
 interface FormulaEditConfig {
   overrides: FormulaOverrides;
   /** Whether editing is allowed right now (base case active). */
   enabled: boolean;
-  onSet: (stepOutput: string, col: string, src: string) => void;
-  onReset: (stepOutput: string, col: string) => void;
+  /** Commit an edit; returns an error string to show in-editor, or null on success. */
+  onSet: (stepOutput: string, slot: string, src: string) => string | null;
+  onReset: (stepOutput: string, slot: string) => void;
 }
 
 /** Build a row's identity object from its identity columns. */
@@ -721,63 +722,87 @@ function FormulaDisplay({ op, inputRef, onColClick, onTableClick, inputColumns, 
     );
   };
 
+  const structSlots = formulaEdit ? structuralSlots(op, inputRef) : [];
+
+  // Render the pencil / modified / reset actions + inline editor for one slot.
+  const slotControls = (s: EditSlot) => {
+    if (!formulaEdit) return null;
+    const overridden = !!formulaEdit.overrides[stepOutput]?.[s.slot];
+    return (
+      <>
+        <span className="engine-formula-line-actions">
+          {overridden && <span className="engine-formula-modified" title="Overridden vs the code default">modified</span>}
+          {formulaEdit.enabled && (
+            <button
+              type="button"
+              className="engine-formula-pencil"
+              title="Edit"
+              aria-label={`Edit ${s.label}`}
+              onClick={() => setEditingSlot((cur) => (cur === s.slot ? null : s.slot))}
+            >
+              ✎
+            </button>
+          )}
+          {overridden && (
+            <button type="button" className="scenario-link" onClick={() => formulaEdit.onReset(stepOutput, s.slot)}>reset</button>
+          )}
+        </span>
+        {editingSlot === s.slot && (
+          <InlineFormulaEditor
+            slot={s}
+            inputColumns={inputColumns}
+            onSave={(src) => {
+              const e = formulaEdit.onSet(stepOutput, s.slot, src);
+              if (!e) setEditingSlot(null);
+              return e;
+            }}
+            onCancel={() => setEditingSlot(null)}
+          />
+        )}
+      </>
+    );
+  };
+
   return (
     <div className="engine-formula">
       <div className="engine-formula-head">
         {p.head.map(renderTok)}
       </div>
+
+      {structSlots.length > 0 && (
+        <div className="engine-op-params">
+          {structSlots.map((s) => (
+            <div key={s.slot} className="engine-op-param">
+              <span className="engine-op-param-label">{s.label}:</span>
+              <code className="engine-op-param-val">{s.source || '(none)'}</code>
+              {slotControls(s)}
+            </div>
+          ))}
+        </div>
+      )}
+
       {p.lines.length > 0 && (
         <div className="engine-formula-body">
           {p.lines.map((line, i) => {
             const s = slots[i]; // aligned 1:1 with lines for editable ops
-            const overridden = !!(s && formulaEdit && formulaEdit.overrides[stepOutput]?.[s.slot]);
             return (
               <div key={i} className="engine-formula-line">
                 <span className="engine-formula-line-toks">{line.map(renderTok)}</span>
-                {s && formulaEdit && (
-                  <span className="engine-formula-line-actions">
-                    {overridden && (
-                      <span className="engine-formula-modified" title="Overridden vs the code default">modified</span>
-                    )}
-                    {formulaEdit.enabled && (
-                      <button
-                        type="button"
-                        className="engine-formula-pencil"
-                        title="Edit this formula"
-                        aria-label={`Edit formula for ${s.label}`}
-                        onClick={() => setEditingSlot((cur) => (cur === s.slot ? null : s.slot))}
-                      >
-                        ✎
-                      </button>
-                    )}
-                    {overridden && (
-                      <button type="button" className="scenario-link" onClick={() => formulaEdit.onReset(stepOutput, s.slot)}>
-                        reset
-                      </button>
-                    )}
-                  </span>
-                )}
-                {s && formulaEdit && editingSlot === s.slot && (
-                  <InlineFormulaEditor
-                    slot={s}
-                    inputColumns={inputColumns}
-                    onSave={(src) => { formulaEdit.onSet(stepOutput, s.slot, src); setEditingSlot(null); }}
-                    onCancel={() => setEditingSlot(null)}
-                  />
-                )}
+                {s && slotControls(s)}
               </div>
             );
           })}
         </div>
       )}
-      {formulaEdit && slots.length === 0 && (
+
+      {formulaEdit && slots.length === 0 && structSlots.length <= 1 && (
         <p className="hint engine-formula-note">
-          Structural step — it reshapes rows/columns and has no per-cell formula to edit.
+          Structural step — edit its input/parameters above; it has no per-cell formula.
         </p>
       )}
-      {formulaEdit && slots.length > 0 && !formulaEdit.enabled && (
+      {formulaEdit && !formulaEdit.enabled && (slots.length > 0 || structSlots.length > 0) && (
         <p className="hint engine-formula-note">
-          Switch to the <strong>Base case</strong> scenario to edit (formula edits apply model-wide).
+          Switch to the <strong>Base case</strong> scenario to edit (model edits apply to every scenario).
         </p>
       )}
     </div>
@@ -787,27 +812,35 @@ function FormulaDisplay({ op, inputRef, onColClick, onTableClick, inputColumns, 
 function InlineFormulaEditor({ slot, inputColumns, onSave, onCancel }: {
   slot: EditSlot;
   inputColumns: Set<string>;
-  onSave: (src: string) => void;
+  /** Commit; returns an error string to show, or null on success. */
+  onSave: (src: string) => string | null;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState(slot.source);
   const [err, setErr] = useState<string | null>(null);
 
   const save = () => {
-    let cols: string[];
-    try {
-      cols = slot.kind === 'expr' ? collectColNames(parseExpr(draft)) : aggColNames(parseAgg(draft));
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-      return;
+    // Cheap local validation for expressions/aggregations; structural ('text')
+    // slots are validated when the parent re-evaluates the model.
+    if (slot.kind === 'expr' || slot.kind === 'agg') {
+      let cols: string[];
+      try {
+        cols = slot.kind === 'expr' ? collectColNames(parseExpr(draft)) : aggColNames(parseAgg(draft));
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+        return;
+      }
+      const unknown = cols.filter((c) => !inputColumns.has(c));
+      if (unknown.length) {
+        setErr(`Unknown column${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')} — must be one of the input columns below.`);
+        return;
+      }
     }
-    const unknown = cols.filter((c) => !inputColumns.has(c));
-    if (unknown.length) {
-      setErr(`Unknown column${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')} — must be one of the input columns below.`);
-      return;
-    }
-    onSave(draft);
+    const e = onSave(draft);
+    if (e) setErr(e);
   };
+
+  const isExprLike = slot.kind === 'expr' || slot.kind === 'agg';
 
   return (
     <div className="engine-formula-editor">
@@ -816,20 +849,22 @@ function InlineFormulaEditor({ slot, inputColumns, onSave, onCancel }: {
         className="engine-formula-input"
         value={draft}
         spellCheck={false}
+        rows={isExprLike ? 3 : 1}
         onChange={(e) => { setDraft(e.target.value); setErr(null); }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !isExprLike)) { e.preventDefault(); save(); }
           if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
         }}
       />
       {err && <div className="engine-formula-err">{err}</div>}
       <div className="engine-formula-actions">
-        <button className="btn" onClick={save}>Save (⌘↵)</button>
+        <button className="btn" onClick={save}>Save{isExprLike ? ' (⌘↵)' : ' (↵)'}</button>
         <button className="scenario-link" onClick={onCancel}>Cancel</button>
       </div>
       <div className="hint engine-formula-cols">
-        {slot.kind === 'agg' ? 'Aggregation: fn(column) — sum, count, avg, min, max, first, last. ' : ''}
-        Columns in scope: {[...inputColumns].sort().join(', ') || '(none)'}
+        {slot.kind === 'agg' && 'Aggregation: fn(column) — sum, count, avg, min, max, first, last. '}
+        {slot.hint && `${slot.hint}. `}
+        {isExprLike && `Columns in scope: ${[...inputColumns].sort().join(', ') || '(none)'}`}
       </div>
     </div>
   );
@@ -1142,11 +1177,12 @@ function EditableCell({ value, type, onCommit }: {
 
 // ─── Formula definition editor (all step types) ─────────────────────────────
 
-/** One editable expression "slot" within a step's operation. */
-interface EditSlot { slot: string; label: string; kind: 'expr' | 'agg'; source: string }
+/** One editable slot within a step — an expression (map column / agg / filter
+ *  predicate) or a structural parameter (`text`, e.g. window range, join keys). */
+interface EditSlot { slot: string; label: string; kind: 'expr' | 'agg' | 'text'; source: string; hint?: string }
 
-/** The editable expressions a step exposes. Structural ops (join / select /
- *  rename / sort / limit / union) have none. */
+/** The editable expressions a step exposes (the formula lines). Structural ops
+ *  (join / select / rename / sort / limit / union) have none of these. */
 function editSlots(op: TableOp): EditSlot[] {
   switch (op.op) {
     case 'map':
@@ -1160,6 +1196,45 @@ function editSlots(op: TableOp): EditSlot[] {
     default:
       return [];
   }
+}
+
+/** The editable *structural* parameters of a step's operation — the "Operation"
+ *  line. Includes the input table for every step, plus op-specific wiring. */
+function structuralSlots(op: TableOp, inputRef: string): EditSlot[] {
+  const out: EditSlot[] = [];
+  const t = (slot: string, label: string, source: string, hint: string) => out.push({ slot, label, kind: 'text', source, hint });
+  t(STRUCT.input, 'input table', inputRef, 'a table name');
+  switch (op.op) {
+    case 'groupBy':
+      t(STRUCT.keys, 'group by', op.keys.join(', '), 'comma-separated columns');
+      break;
+    case 'window':
+      t(STRUCT.partitionBy, 'partition by', op.partitionBy.join(', '), 'columns, comma-separated (empty = whole table)');
+      t(STRUCT.orderBy, 'order by', op.orderBy, 'a single column');
+      t(STRUCT.range, 'range', `${op.range.preceding}, ${op.range.following}`, 'preceding, following (rows). e.g. "11, 0" = trailing 12');
+      break;
+    case 'join':
+      t(STRUCT.right, 'right table', op.right, 'a table name');
+      t(STRUCT.type, 'join type', op.type, 'inner | left | cross');
+      if (op.type !== 'cross') t(STRUCT.on, 'on', op.on.map((o) => `${o.left}=${o.right}`).join(', '), 'left=right, comma-separated');
+      break;
+    case 'select':
+      t(STRUCT.columns, 'columns', op.columns.join(', '), 'comma-separated columns to keep');
+      break;
+    case 'rename':
+      t(STRUCT.renames, 'renames', Object.entries(op.renames).map(([f, to]) => `${f}=${to}`).join(', '), 'from=to, comma-separated');
+      break;
+    case 'sort':
+      t(STRUCT.by, 'sort by', op.by.map((b) => b.column + (b.desc ? ' desc' : '')).join(', '), 'col [desc], comma-separated');
+      break;
+    case 'limit':
+      t(STRUCT.n, 'limit', String(op.n), 'number of rows');
+      break;
+    case 'union':
+      t(STRUCT.members, 'members', op.tables.join(', '), 'comma-separated table names');
+      break;
+  }
+  return out;
 }
 
 /** All distinct column names referenced by an expression. */

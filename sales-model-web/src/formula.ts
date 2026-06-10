@@ -217,58 +217,143 @@ export function aggColNames(a: AggExpr): string[] {
   return a.column ? [a.column] : [];
 }
 
-// ─── Model patching ──────────────────────────────────────────────────────────
-
-/** Per-step formula source overrides, keyed by a "slot":
- *  - map:    the output column name
- *  - filter: the literal slot `$predicate`
- *  - groupBy/window: the derived (output) column name */
-export type FormulaOverrides = Record<string, Record<string, string>>;
+// ─── Structural-parameter parsers (the "Operation" line) ─────────────────────
 
 export const FILTER_SLOT = '$predicate';
+export const STRUCT = {
+  input: '$input', keys: '$keys', partitionBy: '$partitionBy', orderBy: '$orderBy',
+  range: '$range', right: '$right', type: '$type', on: '$on', columns: '$columns',
+  renames: '$renames', by: '$by', n: '$n', members: '$members',
+} as const;
 
-/** Patch a model's step formulas from the override sources. An override that
- *  fails to parse is skipped, leaving the original definition in place. */
-export function applyFormulaOverrides(model: ModelDef, overrides: FormulaOverrides): ModelDef {
+const ident = (s: string): string => {
+  const t = s.trim();
+  if (!/^[A-Za-z_]\w*$/.test(t)) throw new Error(`"${s.trim()}" is not a valid name`);
+  return t;
+};
+const colList = (s: string): string[] =>
+  s.split(',').map((x) => x.trim()).filter(Boolean).map(ident);
+const tableRef = (s: string): string => {
+  const t = s.trim();
+  if (!t) throw new Error('expected a table name');
+  return t;
+};
+const parseRange = (s: string): { preceding: number; following: number } => {
+  const nums = s.replace(/[[\]]/g, '').split(',').map((x) => Number(x.trim()));
+  if (nums.length !== 2 || nums.some((n) => !Number.isFinite(n))) {
+    throw new Error('range must be "preceding, following", e.g. "11, 0"');
+  }
+  return { preceding: Math.abs(nums[0]), following: Math.abs(nums[1]) };
+};
+const parseJoinType = (s: string): 'inner' | 'left' | 'cross' => {
+  const t = s.trim().toLowerCase();
+  if (t !== 'inner' && t !== 'left' && t !== 'cross') throw new Error('join type must be inner, left, or cross');
+  return t;
+};
+const parseJoinOn = (s: string): Array<{ left: string; right: string }> =>
+  s.split(',').map((p) => p.trim()).filter(Boolean).map((p) => {
+    const [l, r] = p.split('=').map((x) => x.trim());
+    if (!l || !r) throw new Error(`each "on" clause must be left=right, got "${p}"`);
+    return { left: ident(l), right: ident(r) };
+  });
+const parseRenames = (s: string): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const p of s.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const [f, t] = p.split(/=|→/).map((x) => x.trim());
+    if (!f || !t) throw new Error(`each rename must be from=to, got "${p}"`);
+    out[ident(f)] = ident(t);
+  }
+  return out;
+};
+const parseSortBy = (s: string): Array<{ column: string; desc?: boolean }> =>
+  s.split(',').map((x) => x.trim()).filter(Boolean).map((p) => {
+    const parts = p.split(/\s+/);
+    const column = ident(parts[0]);
+    const desc = (parts[1] ?? '').toLowerCase() === 'desc';
+    return desc ? { column, desc } : { column };
+  });
+const parseCount = (s: string): number => {
+  const n = Number(s.trim());
+  if (!Number.isFinite(n) || n < 0) throw new Error('expected a non-negative number');
+  return Math.floor(n);
+};
+
+// ─── Model patching ──────────────────────────────────────────────────────────
+
+/** Per-step override sources, keyed by a "slot":
+ *  - expression slots: a map output column, an agg output column, or `$predicate`
+ *  - structural slots: `$input`, `$keys`, `$partitionBy`, `$orderBy`, `$range`,
+ *    `$right`, `$type`, `$on`, `$columns`, `$renames`, `$by`, `$n`, `$members` */
+export type FormulaOverrides = Record<string, Record<string, string>>;
+
+/** Apply one slot override onto a working (deep-cloned) step. Throws on a parse
+ *  error so the caller can decide to skip (lenient) or reject (strict). */
+function applySlot(step: Step, slot: string, src: string): void {
+  if (slot === STRUCT.input) { step.input = tableRef(src); return; }
+  const op = step.op;
+  switch (op.op) {
+    case 'map':
+      if (slot.startsWith('$')) throw new Error(`map has no "${slot}"`);
+      op.columns[slot] = parseExpr(src); return;
+    case 'filter':
+      if (slot !== FILTER_SLOT) throw new Error(`filter has no "${slot}"`);
+      op.predicate = parseExpr(src); return;
+    case 'groupBy':
+      if (slot === STRUCT.keys) { const k = colList(src); if (!k.length) throw new Error('need at least one key'); op.keys = k; return; }
+      op.aggs[slot] = parseAgg(src); return;
+    case 'window':
+      if (slot === STRUCT.partitionBy) { op.partitionBy = src.trim() ? colList(src) : []; return; }
+      if (slot === STRUCT.orderBy) { op.orderBy = ident(src); return; }
+      if (slot === STRUCT.range) { op.range = parseRange(src); return; }
+      op.derive[slot] = parseAgg(src); return;
+    case 'join':
+      if (slot === STRUCT.right) { op.right = tableRef(src); return; }
+      if (slot === STRUCT.type) { op.type = parseJoinType(src); return; }
+      if (slot === STRUCT.on) { op.on = parseJoinOn(src); return; }
+      throw new Error(`join has no "${slot}"`);
+    case 'select':
+      if (slot === STRUCT.columns) { op.columns = colList(src); return; }
+      throw new Error(`select has no "${slot}"`);
+    case 'rename':
+      if (slot === STRUCT.renames) { op.renames = parseRenames(src); return; }
+      throw new Error(`rename has no "${slot}"`);
+    case 'sort':
+      if (slot === STRUCT.by) { op.by = parseSortBy(src); return; }
+      throw new Error(`sort has no "${slot}"`);
+    case 'limit':
+      if (slot === STRUCT.n) { op.n = parseCount(src); return; }
+      throw new Error(`limit has no "${slot}"`);
+    case 'union':
+      if (slot === STRUCT.members) { op.tables = colList(src); return; }
+      throw new Error(`union has no "${slot}"`);
+  }
+}
+
+/** Patch a model's steps from the override sources. Lenient by default — a slot
+ *  that won't parse is skipped, leaving the original in place. With
+ *  `{ strict: true }`, throws on the first bad slot (used to validate an edit
+ *  before committing it). */
+export function applyFormulaOverrides(
+  model: ModelDef,
+  overrides: FormulaOverrides,
+  opts: { strict?: boolean } = {},
+): ModelDef {
   if (!overrides || Object.keys(overrides).length === 0) return model;
   const steps: Step[] = model.steps.map((step) => {
     const stepOv = overrides[step.output];
-    if (!stepOv) return step;
-    const op = step.op;
-    try {
-      switch (op.op) {
-        case 'map': {
-          const columns = { ...op.columns };
-          for (const [col, src] of Object.entries(stepOv)) tryAssign(columns, col, () => parseExpr(src));
-          return { ...step, op: { ...op, columns } };
-        }
-        case 'filter': {
-          if (stepOv[FILTER_SLOT] === undefined) return step;
-          try { return { ...step, op: { ...op, predicate: parseExpr(stepOv[FILTER_SLOT]) } }; }
-          catch { return step; }
-        }
-        case 'groupBy': {
-          const aggs = { ...op.aggs };
-          for (const [col, src] of Object.entries(stepOv)) tryAssign(aggs, col, () => parseAgg(src));
-          return { ...step, op: { ...op, aggs } };
-        }
-        case 'window': {
-          const derive = { ...op.derive };
-          for (const [col, src] of Object.entries(stepOv)) tryAssign(derive, col, () => parseAgg(src));
-          return { ...step, op: { ...op, derive } };
-        }
-        default:
-          return step; // structural ops have no editable formula
+    if (!stepOv || Object.keys(stepOv).length === 0) return step;
+    const next: Step = { ...step, op: structuredClone(step.op) };
+    for (const [slot, src] of Object.entries(stepOv)) {
+      try {
+        applySlot(next, slot, src);
+      } catch (e) {
+        if (opts.strict) throw new Error(`${step.output} · ${slot.replace(/^\$/, '')}: ${e instanceof Error ? e.message : String(e)}`);
+        // lenient: leave the original definition in place
       }
-    } catch {
-      return step;
     }
+    return next;
   });
   return { ...model, steps };
-}
-
-function tryAssign<T>(target: Record<string, T>, key: string, make: () => T): void {
-  try { target[key] = make(); } catch { /* keep original */ }
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────

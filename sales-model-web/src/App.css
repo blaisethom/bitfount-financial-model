@@ -1448,3 +1448,48 @@ section h3 {
   font-family: system-ui, -apple-system, sans-serif;
 }
 .engine-formula-note { margin: 0.5rem 0 0; }
+
+/* ── Engine Preview: editable Operation (structural) params ─────────────── */
+.engine-op-params {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 2px;
+  padding: 6px 8px;
+  background: #eef2ff;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+.engine-op-param {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 11.5px;
+}
+.engine-op-param-label {
+  color: var(--muted);
+  min-width: 5.5rem;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+.engine-op-param-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* ── Model override error banner ────────────────────────────────────────── */
+.model-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 0 1.5rem;
+  padding: 0.5rem 0.9rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b;
+  font-size: 0.85rem;
+}
