@@ -341,6 +341,14 @@ export function applyEditToInput(input: ModelInput, edit: ReportEdit): ModelInpu
       return { ...input, rdTaxCredit: arr };
     }
 
+    // ── Interest income per month ───────────────────────────────────────
+    case 'interest_income_t': {
+      const m = Number(id.month_idx);
+      const arr = [...input.interestIncome];
+      arr[m] = asNumber(edit.value);
+      return { ...input, interestIncome: arr };
+    }
+
     // ── Opening balance sheet (single row) ──────────────────────────────
     case 'opening_bs_t': {
       const key = OPENING_BS_COL_TO_KEY[edit.col];

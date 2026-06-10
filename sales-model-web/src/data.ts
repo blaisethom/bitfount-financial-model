@@ -408,6 +408,15 @@ export function loadInitialInput(): ModelInput {
   rdTaxCredit[15] = 330_000; // Apr 2027
   rdTaxCredit[27] = 330_000; // Apr 2028
 
+  // Interest income on cash, booked between EBITDA and operating profit. v4
+  // carries actual interest only in Q1-2026 (Budgets!G48 = 16,648 × 1.32;
+  // H48 = 1,196 × 1.32) and nothing thereafter. Reproduced here so 2026
+  // operating profit / PaT ties to v4; set later months to model interest on
+  // the cash balance if/when that's wanted.
+  const interestIncome: number[] = new Array(dates.length).fill(0);
+  interestIncome[0] = 16_648 * 1.32; // Jan 2026 = 21,975.36
+  interestIncome[1] = 1_196 * 1.32;  // Feb 2026 = 1,578.72
+
   const actuals: Actuals = {
     pnlMonthly: {},
     costDeptMonthly: {
@@ -443,6 +452,7 @@ export function loadInitialInput(): ModelInput {
     modellerCommissionAdjustments,
     salesCommissionOverrides,
     rdTaxCredit,
+    interestIncome,
   };
 }
 

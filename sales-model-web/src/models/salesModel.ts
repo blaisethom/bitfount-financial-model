@@ -171,6 +171,16 @@ export const salesModel = defineModel({
         'Defaults reproduce v4 ($437k 2026, $330k 2027, $330k 2028) smoothed ' +
         'evenly across each year.',
     }),
+    interest_income_t: manual({
+      schema: S.interest_income,
+      defaults: [],
+      description:
+        'Interest income per month (positive = income received). Sits between ' +
+        'EBITDA and operating profit: operating_profit = ebitda − depreciation ' +
+        '+ interest_income. Defaults reproduce v4 (Budgets!G48/H48): interest ' +
+        'on cash of £21,975 in Jan-2026 and £1,579 in Feb-2026, then £0 — v4 ' +
+        'carries no interest income beyond Q1-2026.',
+    }),
     dept_to_tab_t: manual({
       schema: S.dept_to_tab,
       defaults: [],
@@ -1167,29 +1177,54 @@ export const salesModel = defineModel({
       output: 'budget_with_rd_credit_join',
     }),
     step({
+      id: 'budget_with_rd_credit_renamed',
+      name: 'Rename R&D credit `value` column',
+      description: 'Rename to rd_credit_value so the next join with interest_income_t (also has `value`) does not collide.',
+      input: 'budget_with_rd_credit_join',
+      op: ops.rename({ value: 'rd_credit_value' }),
+      output: 'budget_with_rd_credit_renamed',
+    }),
+    step({
+      id: 'budget_with_interest_join',
+      name: 'Join with interest income per month',
+      description: 'Bring per-month interest income onto each row (v4 books it between EBITDA and operating profit).',
+      input: 'budget_with_rd_credit_renamed',
+      op: ops.join('interest_income_t', [{ left: 'month_idx', right: 'month_idx' }], 'left'),
+      output: 'budget_with_interest_join',
+    }),
+    step({
       id: 'budget_monthly_full_pl',
       name: 'Monthly P&L (with operating profit + profit after tax)',
       description:
         'depreciation = depreciation_t.value (null → 0); ' +
-        'operating_profit = ebitda - depreciation; ' +
+        'interest_income = interest_income_t.value (null → 0); ' +
+        'operating_profit = ebitda − depreciation + interest_income (matches v4 ' +
+        'Budgets!row51 = EBITDA + Depreciation + Interest); ' +
         'rd_tax_credit = rd_tax_credit_t.value (null → 0); ' +
         'profit_after_tax = operating_profit + rd_tax_credit. ' +
         'EBITDA above is the actuals-overridden value, so any pinned EBITDA ' +
         'flows through to operating_profit and profit_after_tax automatically.',
-      input: 'budget_with_rd_credit_join',
+      input: 'budget_with_interest_join',
       op: ops.map({
         depreciation: iff(eq(col('depreciation_value'), lit(null)), lit(0), col('depreciation_value')),
-        operating_profit: sub(
-          col('ebitda'),
-          iff(eq(col('depreciation_value'), lit(null)), lit(0), col('depreciation_value')),
-        ),
-        rd_tax_credit: iff(eq(col('value'), lit(null)), lit(0), col('value')),
-        profit_after_tax: add(
+        interest_income: iff(eq(col('value'), lit(null)), lit(0), col('value')),
+        operating_profit: add(
           sub(
             col('ebitda'),
             iff(eq(col('depreciation_value'), lit(null)), lit(0), col('depreciation_value')),
           ),
           iff(eq(col('value'), lit(null)), lit(0), col('value')),
+        ),
+        rd_tax_credit: iff(eq(col('rd_credit_value'), lit(null)), lit(0), col('rd_credit_value')),
+        profit_after_tax: add(
+          add(
+            sub(
+              col('ebitda'),
+              iff(eq(col('depreciation_value'), lit(null)), lit(0), col('depreciation_value')),
+            ),
+            iff(eq(col('value'), lit(null)), lit(0), col('value')),
+          ),
+          iff(eq(col('rd_credit_value'), lit(null)), lit(0), col('rd_credit_value')),
         ),
       }),
       output: 'budget_monthly_full_pl',
@@ -1228,6 +1263,7 @@ export const salesModel = defineModel({
         total_opex: agg.sum('total_opex'),
         ebitda: agg.sum('ebitda'),
         depreciation: agg.sum('depreciation'),
+        interest_income: agg.sum('interest_income'),
         operating_profit: agg.sum('operating_profit'),
         rd_tax_credit: agg.sum('rd_tax_credit'),
         profit_after_tax: agg.sum('profit_after_tax'),
@@ -2165,9 +2201,10 @@ export const salesModel = defineModel({
       refs: [
         'rev_with_modeller_commission',
         'budget_with_cos_gp', 'budget_with_opex', 'budget_monthly',
-        'rd_tax_credit_t',
+        'rd_tax_credit_t', 'interest_income_t',
         'budget_with_dep_join', 'budget_with_dep_renamed',
-        'budget_with_rd_credit_join', 'budget_monthly_full_pl',
+        'budget_with_rd_credit_join', 'budget_with_rd_credit_renamed',
+        'budget_with_interest_join', 'budget_monthly_full_pl',
         'budget_with_dates', 'budget_with_year', 'budget_yearly',
       ],
     },

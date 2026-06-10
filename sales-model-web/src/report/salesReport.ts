@@ -584,6 +584,27 @@ const budgetSection: ReportSection = {
     },
     { kind: 'spacer', rows: 2 },
 
+    { kind: 'title', text: 'Interest income (input — booked between EBITDA and operating profit)' },
+    { kind: 'paragraph', italic: true,
+      text:
+        'Per-month interest income on cash (positive = income). Defaults ' +
+        'reproduce v4 (Budgets!G48/H48): £21,975 in Jan-2026 and £1,579 in ' +
+        'Feb-2026, then £0 — v4 carries no interest beyond Q1-2026. Edit any ' +
+        'cell to model interest on the running cash balance in later periods.',
+    },
+    {
+      kind: 'table',
+      source: 'interest_income_t',
+      axis: monthAxis,
+      rows: {
+        kind: 'value-columns',
+        rows: [{ col: 'value', label: 'Interest income' }],
+      },
+      rollup: yearRollup,
+      canonical: { refs: ['interest_income_t'] },
+    },
+    { kind: 'spacer', rows: 2 },
+
     { kind: 'title', text: 'Sales commission overrides (per-month)' },
     { kind: 'paragraph', italic: true,
       text:
@@ -676,6 +697,9 @@ const budgetSection: ReportSection = {
             valueCol: 'depreciation', label: 'Capital depreciation' },
           { source: 'budget_monthly_full_pl',
             identity: {} as Record<string, string | number>,
+            valueCol: 'interest_income', label: 'Interest income' },
+          { source: 'budget_monthly_full_pl',
+            identity: {} as Record<string, string | number>,
             valueCol: 'operating_profit', label: 'Operating Profit', bold: true },
           { source: 'budget_monthly_full_pl',
             identity: {} as Record<string, string | number>,
@@ -702,6 +726,7 @@ const budgetSection: ReportSection = {
           { col: 'total_opex',       label: 'Total opex' },
           { col: 'ebitda',           label: 'EBITDA', bold: true },
           { col: 'depreciation',     label: 'Capital depreciation' },
+          { col: 'interest_income',  label: 'Interest income' },
           { col: 'operating_profit', label: 'Operating profit', bold: true },
           { col: 'rd_tax_credit',    label: 'R&D tax credit' },
           { col: 'profit_after_tax', label: 'Profit after tax', bold: true },

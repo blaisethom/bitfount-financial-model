@@ -138,6 +138,16 @@ const SCHEMAS = {
     ],
   } satisfies TableSchema,
 
+  // Per-month interest income (positive = income received). Booked between
+  // EBITDA and operating profit; flows into profit_after_tax and the cash
+  // waterfall (via profit_after_tax).
+  interest_income: {
+    columns: [
+      { name: 'month_idx', type: 'number' as const },
+      { name: 'value', type: 'number' as const },
+    ],
+  } satisfies TableSchema,
+
   dept_to_tab: {
     columns: [
       { name: 'employee_dept', type: 'string' as const, description: 'Key from Employees tab' },
@@ -538,6 +548,12 @@ export function flattenModelInput(input: ModelInput): FlattenedInput {
   tables.rd_tax_credit_t = {
     schema: SCHEMAS.rd_tax_credit,
     rows: input.rdTaxCredit.map((value, i): Row => ({ month_idx: i, value })),
+  };
+
+  // ─── interest income (per month) ───
+  tables.interest_income_t = {
+    schema: SCHEMAS.interest_income,
+    rows: input.interestIncome.map((value, i): Row => ({ month_idx: i, value })),
   };
 
   // ─── dept to tab mapping (employee_dept → cost_dept) ───

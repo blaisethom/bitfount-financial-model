@@ -310,6 +310,10 @@ export interface ModelInput {
    *  below operating profit in the P&L (operating_profit + rd_credit =
    *  profit_after_tax) and flows through to retained earnings + cash. */
   rdTaxCredit: number[];
+  /** Per-month interest income (positive number = income). Booked between
+   *  EBITDA and operating profit (operating_profit = ebitda − depreciation +
+   *  interest_income) and flows through to retained earnings + cash. */
+  interestIncome: number[];
 }
 
 export interface PerTypeMonthly {
