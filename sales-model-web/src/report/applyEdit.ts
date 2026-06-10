@@ -457,10 +457,45 @@ export function applyEditToInput(input: ModelInput, edit: ReportEdit): ModelInpu
       };
     }
 
+    // ── Per-month BS schedule (capex / loans / working-capital) ─────────
+    case 'bs_monthly_schedule_t': {
+      const m = Number(id.month_idx);
+      const key = BS_SCHEDULE_COL_TO_KEY[edit.col];
+      if (!key || !Number.isFinite(m)) return input;
+      const arr = input.bsMonthlySchedule.map((s) => ({ ...s }));
+      const row = arr.find((s) => s.monthIdx === m);
+      if (!row) return input;
+      row[key] = asNumber(edit.value);
+      return { ...input, bsMonthlySchedule: arr };
+    }
+
     default:
       return input;
   }
 }
+
+/** BS schedule flattened column → BalanceSheetMonthlySchedule numeric key. */
+const BS_SCHEDULE_COL_TO_KEY: Record<string, 'capex' | 'loanRepayment' | 'tradeCreditors' | 'otherDebtors' | 'vat' | 'otherCreditors'> = {
+  capex: 'capex',
+  loan_repayment: 'loanRepayment',
+  trade_creditors: 'tradeCreditors',
+  other_debtors: 'otherDebtors',
+  vat: 'vat',
+  other_creditors: 'otherCreditors',
+};
+
+/** Source tables that `applyEditToInput` knows how to mutate — i.e. the set of
+ *  editable manual inputs. Used by the Engine Preview to decide which source
+ *  cells to make editable. */
+export const EDITABLE_SOURCES: ReadonlySet<string> = new Set([
+  'pricing_t', 'schedule_t', 'commission_t', 'employee_assumptions_t', 'employees_t',
+  'sales_commission_overrides_t', 'modeller_commission_adjustments_t', 'revenue_adjustments_t',
+  'hubspot_ta_rules_t', 'hubspot_pipeline_t', 'cost_line_items_t',
+  'depreciation_t', 'rd_tax_credit_t', 'interest_income_t',
+  'opening_bs_t', 'bs_assumptions_t', 'bs_monthly_schedule_t',
+  'pnl_monthly_actuals_t', 'cost_dept_monthly_actuals_t', 'employee_adjustments_sparse_t',
+  'bs_monthly_actuals_t',
+]);
 
 // Tiny utility to keep CellValue narrowing local.
 export type { CellValue };

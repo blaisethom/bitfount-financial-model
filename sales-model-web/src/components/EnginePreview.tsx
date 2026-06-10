@@ -10,7 +10,26 @@ import {
   type AggExpr, type CellValue, type Column, type EvalResult, type Expr, type ModelDef, type ModelOutputDef,
   type SourceDef, type Step, type Table, type TableOp,
 } from '../engine';
+import type { ReportEdit } from '../report/EngineSection';
 import Modal from './Modal';
+
+/** Wiring that makes a manual source's value cells editable. */
+interface EditConfig {
+  source: string;
+  /** Identity columns for this source (used to address the edited row). */
+  idKeys: string[];
+  onEdit: (e: ReportEdit) => void;
+}
+
+/** Build a row's identity object from its identity columns. */
+function rowIdentity(row: Record<string, CellValue>, idKeys: string[]): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const k of idKeys) {
+    const v = row[k];
+    if (typeof v === 'number' || typeof v === 'string') out[k] = v;
+  }
+  return out;
+}
 
 interface Props {
   model: ModelDef;
@@ -26,6 +45,13 @@ interface Props {
    *  push the ref to history. Same-ref navigations are deduped before this
    *  fires. */
   onRefChange?: (ref: string) => void;
+  /** When provided, value cells of editable manual sources become editable and
+   *  emit a ReportEdit on commit. */
+  onEdit?: (e: ReportEdit) => void;
+  /** Source names whose cells may be edited (those `applyEditToInput` handles). */
+  editableSources?: ReadonlySet<string>;
+  /** Identity columns for a given source ref. */
+  identityFor?: (ref: string) => string[];
 }
 
 interface ExpandedTable {
@@ -55,7 +81,7 @@ function stepInputRefs(step: Step): string[] {
   return refs;
 }
 
-export default function EnginePreview({ model, result: passedResult, currentRef, onRefChange }: Props) {
+export default function EnginePreview({ model, result: passedResult, currentRef, onRefChange, onEdit, editableSources, identityFor }: Props) {
   const result = useMemo(
     () => passedResult ?? evaluateModel(model),
     [model, passedResult],
@@ -139,6 +165,13 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
 
   const total = nodes.length;
   const current = nodes[currentIdx];
+
+  // When the current node is an editable manual source, build the edit wiring.
+  const editConfig = useMemo<EditConfig | undefined>(() => {
+    if (!current || current.kind !== 'source' || current.src.kind !== 'manual') return undefined;
+    if (!onEdit || !editableSources?.has(current.ref)) return undefined;
+    return { source: current.ref, idKeys: identityFor?.(current.ref) ?? [], onEdit };
+  }, [current, onEdit, editableSources, identityFor]);
 
   // Lookup: ref → its headline output entry, if declared.
   const headlineByRef = useMemo(() => {
@@ -275,6 +308,7 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
                     dateMap={dateMap}
                     axis={model.defaultAxis}
                     onExpand={openFull}
+                    edit={editConfig}
                   />
                 : <StepDetail
                     step={current.step}
@@ -399,14 +433,16 @@ interface SourceDetailProps {
   dateMap?: Map<number, string>;
   axis?: string;
   onExpand: (title: string, table: Table, pivot?: boolean) => void;
+  edit?: EditConfig;
 }
 
-function SourceDetail({ name, src, table, usages, trace, onJumpToTraceIdx, dateMap, axis, onExpand }: SourceDetailProps) {
+function SourceDetail({ name, src, table, usages, trace, onJumpToTraceIdx, dateMap, axis, onExpand, edit }: SourceDetailProps) {
   return (
     <div className="engine-step-detail">
       <h3 className="engine-step-detail-title">
         {name}
         <span className="engine-kind-badge headline-inline">{src.kind}</span>
+        {edit && <span className="engine-editable-badge" title="Manual input — cells are editable">editable</span>}
       </h3>
       {'description' in src && src.description && (
         <p className="engine-step-detail-desc">{src.description}</p>
@@ -424,8 +460,9 @@ function SourceDetail({ name, src, table, usages, trace, onJumpToTraceIdx, dateM
       </ul>
 
       <div className="engine-section-label">Data <code className="engine-ref">{name}</code></div>
+      {edit && <p className="hint" style={{ marginTop: -4 }}>Click any value cell to edit. Changes save into the active scenario.</p>}
       {table
-        ? <SourceTablePreview table={table} dateMap={dateMap} axis={axis} scrollable onExpand={() => onExpand(name, table, true)} />
+        ? <SourceTablePreview table={table} dateMap={dateMap} axis={axis} scrollable edit={edit} onExpand={() => onExpand(name, table, true)} />
         : <p className="hint">(table not yet materialized)</p>}
 
       <UsageList usages={usages} trace={trace} onJump={onJumpToTraceIdx} />
@@ -828,11 +865,13 @@ interface TablePreviewProps {
    *  scroll inside the preview. The "view full table" link is shown as a
    *  separate footer instead of a "more rows" pseudo-row. */
   scrollable?: boolean;
+  edit?: EditConfig;
 }
 
-function TablePreview({ table, maxRows = 10, onExpand, scrollable }: TablePreviewProps) {
+function TablePreview({ table, maxRows = 10, onExpand, scrollable, edit }: TablePreviewProps) {
   if (!table) return <span className="hint">(table not yet materialized)</span>;
   const cols = table.schema.columns;
+  const idSet = new Set(edit?.idKeys ?? []);
   const shown = scrollable
     ? table.rows
     : Number.isFinite(maxRows) ? table.rows.slice(0, maxRows) : table.rows;
@@ -853,11 +892,29 @@ function TablePreview({ table, maxRows = 10, onExpand, scrollable }: TablePrevie
           <tbody>
             {shown.map((row, i) => (
               <tr key={i}>
-                {cols.map((c) => (
-                  <td key={c.name} style={{ textAlign: c.type === 'number' ? 'right' : 'left' }}>
-                    {formatCell(row[c.name], c.type)}
-                  </td>
-                ))}
+                {cols.map((c) => {
+                  // Editable when an edit config is present and the column is a
+                  // value (not an identity key, which addresses the row).
+                  const canEdit = !!edit && !idSet.has(c.name);
+                  return (
+                    <td key={c.name} style={{ textAlign: c.type === 'number' ? 'right' : 'left' }}>
+                      {canEdit ? (
+                        <EditableCell
+                          value={row[c.name]}
+                          type={c.type}
+                          onCommit={(v) => edit!.onEdit({
+                            source: edit!.source,
+                            identity: rowIdentity(row, edit!.idKeys),
+                            col: c.name,
+                            value: v,
+                          })}
+                        />
+                      ) : (
+                        formatCell(row[c.name], c.type)
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
             {more > 0 && !scrollable && (
@@ -911,6 +968,55 @@ function formatCell(v: unknown, type: string): string {
   return String(v);
 }
 
+/** A value cell that turns into a text input on click and commits on
+ *  Enter/blur. Number cells reject non-numeric input. */
+function EditableCell({ value, type, onCommit }: {
+  value: CellValue;
+  type: string;
+  onCommit: (v: number | string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  if (!editing) {
+    return (
+      <span
+        className="engine-editable-cell"
+        title="Click to edit"
+        onClick={() => { setDraft(value == null ? '' : String(value)); setEditing(true); }}
+      >
+        {formatCell(value, type) || <span className="engine-editable-empty">—</span>}
+      </span>
+    );
+  }
+
+  const commit = () => {
+    setEditing(false);
+    if (type === 'number') {
+      const n = Number(draft);
+      if (draft.trim() === '' || Number.isNaN(n)) return; // reject; keep prior value
+      onCommit(n);
+    } else {
+      onCommit(draft);
+    }
+  };
+
+  return (
+    <input
+      autoFocus
+      className="engine-edit-input"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
+      }}
+      style={{ width: '100%', textAlign: type === 'number' ? 'right' : 'left' }}
+    />
+  );
+}
+
 interface SourceTablePreviewProps {
   table: Table;
   maxRows?: number;
@@ -923,6 +1029,7 @@ interface SourceTablePreviewProps {
   /** Bound the wrapper height and let the preview scroll vertically. The
    *  "view full table" link is shown as a separate footer. */
   scrollable?: boolean;
+  edit?: EditConfig;
 }
 
 /**
@@ -936,10 +1043,10 @@ interface SourceTablePreviewProps {
  * like `active_by_ta_type_month` (with both `starts` and `active`) get one
  * row per metric.
  */
-function SourceTablePreview({ table, maxRows = 5, onExpand, dateMap, axis, scrollable }: SourceTablePreviewProps) {
+function SourceTablePreview({ table, maxRows = 5, onExpand, dateMap, axis, scrollable, edit }: SourceTablePreviewProps) {
   if (!table) return <span className="hint">(table not yet materialized)</span>;
   const pivot = axis ? detectPivot(table, axis) : null;
-  if (!pivot || !axis) return <TablePreview table={table} maxRows={maxRows} onExpand={onExpand} scrollable={scrollable} />;
+  if (!pivot || !axis) return <TablePreview table={table} maxRows={maxRows} onExpand={onExpand} scrollable={scrollable} edit={edit} />;
 
   const { keyCols, valueCols } = pivot;
   const showMetricCol = valueCols.length > 1 || keyCols.length === 0;
@@ -1041,7 +1148,23 @@ function SourceTablePreview({ table, maxRows = 5, onExpand, dateMap, axis, scrol
                 )}
                 {axisValues.map((v) => (
                   <td key={v} style={{ textAlign: 'right' }}>
-                    {formatCell(r.byAxis.get(v) ?? null, r.metricType)}
+                    {edit ? (
+                      <EditableCell
+                        value={r.byAxis.get(v) ?? null}
+                        type={r.metricType}
+                        onCommit={(val) => {
+                          const identity: Record<string, string | number> = {};
+                          keyCols.forEach((c, j) => {
+                            const kv = r.keyValues[j];
+                            if (typeof kv === 'number' || typeof kv === 'string') identity[c.name] = kv;
+                          });
+                          identity[axis] = axisNumeric ? Number(v) : v;
+                          edit.onEdit({ source: edit.source, identity, col: r.metric, value: val });
+                        }}
+                      />
+                    ) : (
+                      formatCell(r.byAxis.get(v) ?? null, r.metricType)
+                    )}
                   </td>
                 ))}
               </tr>

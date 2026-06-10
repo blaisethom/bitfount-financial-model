@@ -10,7 +10,8 @@ import StackedBarChart from './components/StackedBarChart';
 import { salesModel } from './models/salesModel';
 import { evaluateSalesModel } from './models/evaluateSalesModel';
 import EngineSection from './report/EngineSection';
-import { applyEditToInput } from './report/applyEdit';
+import { applyEditToInput, EDITABLE_SOURCES } from './report/applyEdit';
+import { SOURCE_IDENTITY } from './report/identity';
 import { engineSummary } from './report/summary';
 import { salesReport } from './report/salesReport';
 import { useUndoable } from './useUndoable';
@@ -377,6 +378,9 @@ export default function App() {
           result={engineResult}
           currentRef={route.ref}
           onRefChange={setEngineRef}
+          onEdit={handleReportEdit}
+          editableSources={EDITABLE_SOURCES}
+          identityFor={(ref) => SOURCE_IDENTITY[ref] ?? []}
         />
       ) : (
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="budget" onEdit={handleReportEdit} />
