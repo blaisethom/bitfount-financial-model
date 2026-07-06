@@ -122,7 +122,7 @@ function propagateAddressUpstream(
     const stepKey = `${curRef}::${curCol}::${fmtKey(Object.values(curIdentity))}`;
     if (seen.has(stepKey)) return;
     seen.add(stepKey);
-    const step = model.steps.find((s) => s.output === curRef);
+    const step = model.steps.find((s) => s.id === curRef);
     if (!step) return;
 
     let nextCol: string | null = curCol;
@@ -200,7 +200,7 @@ class InlineEmitter {
     this.excludeAddr = addr;
     this.outputIdentity = identity;
     try {
-      const step = this.model.steps.find((s) => s.output === tableRef);
+      const step = this.model.steps.find((s) => s.id === tableRef);
       if (!step) return this.literalValueOf(tableRef, identity, col);
       return this.emitStep(step, identity, col);
     } finally {
@@ -241,7 +241,7 @@ class InlineEmitter {
     if (direct && !addrEq(direct, this.excludeAddr)) return this.formatRef(direct, identity);
 
     // Otherwise walk the producing step.
-    const step = this.model.steps.find((s) => s.output === tableRef);
+    const step = this.model.steps.find((s) => s.id === tableRef);
     if (!step) {
       // No producing step and not addressed: fall back to literal value.
       return this.literalValueOf(tableRef, identity, col);
@@ -270,7 +270,7 @@ class InlineEmitter {
       case 'window':  return this.emitWindow(step, identity, col);
       case 'groupBy': return this.emitGroupBy(step, identity, col);
       case 'join':    return this.emitJoin(step, identity, col);
-      default:        return this.literalValueOf(step.output, identity, col);
+      default:        return this.literalValueOf(step.id, identity, col);
     }
   }
 
@@ -308,7 +308,7 @@ class InlineEmitter {
     const derived = op.derive[col];
     if (!derived) return this.emit(step.input, identity, col);
     if (derived.fn !== 'sum' || !derived.column) {
-      return this.literalValueOf(step.output, identity, col);
+      return this.literalValueOf(step.id, identity, col);
     }
     // Build the partition key + walk order values in [-preceding, +following].
     const partitionId: Record<string, CellValue> = {};
@@ -407,7 +407,7 @@ class InlineEmitter {
       return String(matching.length);
     }
 
-    return this.literalValueOf(step.output, identity, col);
+    return this.literalValueOf(step.id, identity, col);
   }
 
   private emitJoin(step: Step, identity: Record<string, CellValue>, col: string): string {

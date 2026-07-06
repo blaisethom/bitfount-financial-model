@@ -1,0 +1,377 @@
+calendar: weeks_t
+
+vars:
+  week_axis:
+    col: month_idx
+    labels: dates
+  year_rollup:
+    year_totals: true
+    grand_total: false
+
+sections:
+  - id: cashflow-summary
+    label: Cash Summary
+    blocks:
+      - kind: title
+        text: "Weekly Cash Flow"
+        level: 1
+      - kind: paragraph
+        text: "Opening balance, total inflows, total outflows, and closing balance — week by week. Values in GBP."
+      - kind: chart
+        ref: closing_balance_t
+        title: "Closing cash balance (weekly)"
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rows:
+          kind: explicit
+          label_header: "Line item"
+          rows:
+            - identity: { row_id: opening_balance }
+              value_col: value
+              label: "Opening cash balance"
+              bold: true
+            - identity: { row_id: total_inflow }
+              value_col: value
+              label: "Total inflow"
+              bold: true
+            - identity: { row_id: total_outflows }
+              value_col: value
+              label: "Total outflows"
+              bold: true
+            - identity: { row_id: closing_balance }
+              value_col: value
+              label: "Closing cash balance"
+              bold: true
+            - identity: { row_id: closing_prior }
+              value_col: value
+              label: "Closing balance (prior forecast)"
+
+  - id: cashflow-inflows
+    label: Inflows
+    blocks:
+      - kind: title
+        text: "Inflows"
+        level: 1
+      - kind: title
+        text: "Invoiced"
+        level: 2
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Line item"
+          rows:
+            - identity: { row_id: inv_character }
+              value_col: value
+              label: "Character"
+            - identity: { row_id: inv_bi }
+              value_col: value
+              label: "BI"
+            - identity: { row_id: inv_bi2 }
+              value_col: value
+              label: "BI (2)"
+            - identity: { row_id: inv_bi3 }
+              value_col: value
+              label: "BI (3)"
+            - identity: { row_id: inv_bi4 }
+              value_col: value
+              label: "BI (4)"
+      - kind: title
+        text: "Other inflows"
+        level: 2
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Line item"
+          rows:
+            - identity: { row_id: us_commission }
+              value_col: value
+              label: "US Salaries — commission"
+            - identity: { row_id: ltd_deposit }
+              value_col: value
+              label: "Long-term deposit cash"
+            - identity: { row_id: rd_tax }
+              value_col: value
+              label: "R&D Tax Credit"
+            - identity: { row_id: invest_income }
+              value_col: value
+              label: "Investment income"
+            - identity: { row_id: vat }
+              value_col: value
+              label: "VAT"
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Total"
+          rows:
+            - identity: { row_id: total_inflow }
+              value_col: value
+              label: "Total inflow"
+              bold: true
+
+  - id: cashflow-outflows
+    label: Outflows
+    blocks:
+      - kind: title
+        text: "Outflows"
+        level: 1
+      - kind: title
+        text: "UK Payroll"
+        level: 2
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Line item"
+          rows:
+            - identity: { row_id: uk_salaries }
+              value_col: value
+              label: "UK Salaries"
+            - identity: { row_id: uk_pension }
+              value_col: value
+              label: "UK Pension"
+            - identity: { row_id: uk_salary_tax }
+              value_col: value
+              label: "UK Salary tax"
+            - identity: { row_id: uk_psa }
+              value_col: value
+              label: "PSA"
+            - identity: { row_id: uk_commission }
+              value_col: value
+              label: "UK Commission"
+      - kind: title
+        text: "US Payroll"
+        level: 2
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Line item"
+          rows:
+            - identity: { row_id: us_salaries }
+              value_col: value
+              label: "US Salaries"
+            - identity: { row_id: us_cust_success }
+              value_col: value
+              label: "US Salaries — customer success"
+            - identity: { row_id: us_pension }
+              value_col: value
+              label: "US Pension"
+            - identity: { row_id: us_salary_tax }
+              value_col: value
+              label: "US Salary tax"
+            - identity: { row_id: us_medical }
+              value_col: value
+              label: "US Medical Insurance"
+            - identity: { row_id: us_travel }
+              value_col: value
+              label: "US Travel"
+            - identity: { row_id: us_other }
+              value_col: value
+              label: "US Other"
+      - kind: title
+        text: "G&A"
+        level: 2
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Line item"
+          rows:
+            - identity: { row_id: altris_commission }
+              value_col: value
+              label: "Altris Modeller Commission"
+            - identity: { row_id: computers }
+              value_col: value
+              label: "Computers for Customers"
+            - identity: { row_id: ga_accountants }
+              value_col: value
+              label: "Accountants"
+            - identity: { row_id: ga_grenke }
+              value_col: value
+              label: "Grenke Leasing"
+            - identity: { row_id: ga_cf }
+              value_col: value
+              label: "CF Corporate Finance"
+            - identity: { row_id: ga_fora }
+              value_col: value
+              label: "Fora Space"
+            - identity: { row_id: ga_insurance }
+              value_col: value
+              label: "Life Insurance / Health"
+            - identity: { row_id: ga_bank }
+              value_col: value
+              label: "Bank fees"
+            - identity: { row_id: ga_baker_tilley }
+              value_col: value
+              label: "Baker Tilley"
+            - identity: { row_id: ga_it_hw }
+              value_col: value
+              label: "IT Software & Hardware"
+            - identity: { row_id: ga_it_sec }
+              value_col: value
+              label: "IT Security & Compliance"
+            - identity: { row_id: ga_ikites }
+              value_col: value
+              label: "Ikites — IT Services US"
+            - identity: { row_id: ga_legal_edge }
+              value_col: value
+              label: "Legal Edge"
+            - identity: { row_id: ga_hr_lawyers }
+              value_col: value
+              label: "HR Lawyers"
+            - identity: { row_id: ga_ip_lawyers }
+              value_col: value
+              label: "IP Lawyers"
+            - identity: { row_id: ga_recruitment }
+              value_col: value
+              label: "Recruitment"
+            - identity: { row_id: ga_welfare }
+              value_col: value
+              label: "Staff Welfare"
+            - identity: { row_id: ga_travel }
+              value_col: value
+              label: "Travel"
+            - identity: { row_id: ga_bluejay }
+              value_col: value
+              label: "Bluejay Holdings"
+            - identity: { row_id: ga_ppd_repay }
+              value_col: value
+              label: "PPD Repayment"
+            - identity: { row_id: ga_general }
+              value_col: value
+              label: "General Expenses"
+            - identity: { row_id: ga_insure }
+              value_col: value
+              label: "Insurance"
+            - identity: { row_id: ga_coaching }
+              value_col: value
+              label: "Coaching"
+            - identity: { row_id: ga_consultant }
+              value_col: value
+              label: "Consultant"
+      - kind: title
+        text: "Sales & Marketing"
+        level: 2
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Line item"
+          rows:
+            - identity: { row_id: sm_advertising }
+              value_col: value
+              label: "Advertising"
+            - identity: { row_id: sm_exhibitions }
+              value_col: value
+              label: "Exhibitions"
+            - identity: { row_id: emr_altris }
+              value_col: value
+              label: "Altris EMR"
+      - kind: title
+        text: "Fundraising"
+        level: 2
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Line item"
+          rows:
+            - identity: { row_id: fr_sidecar }
+              value_col: value
+              label: "Sidecar Services"
+            - identity: { row_id: fr_v2s }
+              value_col: value
+              label: "Venture to Success"
+            - identity: { row_id: fr_alex }
+              value_col: value
+              label: "Alexander Champion"
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rollup: $year_rollup
+        rows:
+          kind: explicit
+          label_header: "Total"
+          rows:
+            - identity: { row_id: total_outflows }
+              value_col: value
+              label: "Total outflows"
+              bold: true
+
+  - id: cashflow-bank
+    label: Bank Accounts
+    blocks:
+      - kind: title
+        text: "Bank Accounts (GBP equivalent)"
+        level: 1
+      - kind: paragraph
+        text: "Actual bank balances — reconciliation between model and observed cash."
+      - kind: table
+        source: cashflow_t
+        axis: $week_axis
+        default_format: money
+        rows:
+          kind: explicit
+          label_header: "Account"
+          rows:
+            - identity: { row_id: bank_us }
+              value_col: value
+              label: "US"
+            - identity: { row_id: bank_hsbc_usd }
+              value_col: value
+              label: "HSBC USD"
+            - identity: { row_id: bank_hsbc_gbp }
+              value_col: value
+              label: "HSBC GBP"
+            - identity: { row_id: bank_revolut_usd }
+              value_col: value
+              label: "Revolut USD"
+            - identity: { row_id: bank_telleroo }
+              value_col: value
+              label: "Telleroo"
+            - identity: { row_id: bank_revolut_gbp }
+              value_col: value
+              label: "Revolut GBP"
+            - identity: { row_id: bank_barclays }
+              value_col: value
+              label: "Barclays GBP"
+            - identity: { row_id: bank_total }
+              value_col: value
+              label: "Total cash (actual)"
+              bold: true
+            - identity: { row_id: bank_diff }
+              value_col: value
+              label: "Difference (model vs actual)"
+            - identity: { row_id: insignis }
+              value_col: value
+              label: "Insignis (long-term deposit)"

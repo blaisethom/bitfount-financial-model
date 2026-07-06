@@ -438,6 +438,30 @@ export function applyEditToInput(input: ModelInput, edit: ReportEdit): ModelInpu
       return { ...input, employeeCostAdjustments: list };
     }
 
+    // ── Cost-line actuals (per dept × line_name × month) ───────────────
+    // Edits to actual_value update actuals.costLineMonthly["dept|line_name"][month_idx].
+    // Clearing (empty string) removes the override so the modeled value is used again.
+    case 'cost_line_actuals_t': {
+      const dept = String(id.dept);
+      const line = String(id.line_name);
+      const m = Number(id.month_idx);
+      if (!dept || !line || !Number.isFinite(m)) return input;
+      if (edit.col !== 'actual_value') return input;
+      const key = `${dept}|${line}`;
+      const v = asOverrideValue(edit.value);
+      const prev = input.actuals.costLineMonthly ?? {};
+      const prevEntry = prev[key] ?? {};
+      const nextEntry = { ...prevEntry };
+      if (v === undefined) delete nextEntry[m];
+      else nextEntry[m] = v;
+      const nextCostLine = { ...prev, [key]: nextEntry };
+      if (Object.keys(nextEntry).length === 0) delete nextCostLine[key];
+      return {
+        ...input,
+        actuals: { ...input.actuals, costLineMonthly: nextCostLine },
+      };
+    }
+
     // ── Actuals: monthly balance sheet overrides ────────────────────────
     case 'bs_monthly_actuals_t': {
       const m = Number(id.month_idx);
@@ -494,7 +518,7 @@ export const EDITABLE_SOURCES: ReadonlySet<string> = new Set([
   'depreciation_t', 'rd_tax_credit_t', 'interest_income_t',
   'opening_bs_t', 'bs_assumptions_t', 'bs_monthly_schedule_t',
   'pnl_monthly_actuals_t', 'cost_dept_monthly_actuals_t', 'employee_adjustments_sparse_t',
-  'bs_monthly_actuals_t',
+  'bs_monthly_actuals_t', 'cost_line_actuals_t',
 ]);
 
 // Tiny utility to keep CellValue narrowing local.

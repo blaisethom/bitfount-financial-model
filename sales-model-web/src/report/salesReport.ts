@@ -89,6 +89,7 @@ const revenueModelSection: ReportSection = {
   id: 'revenue-model',
   label: 'Revenue Model',
   hint: 'Pricing, per-TA monthly revenue (starts → active → platform / project / PM), modeller commission, aggregates.',
+  engineRef: 'ta_monthly_total',
   blocks: [
     { kind: 'title', text: 'Pricing assumptions' },
     {
@@ -175,6 +176,7 @@ const hubspotSection: ReportSection = {
   id: 'hubspot',
   label: 'HubSpot Pipeline',
   hint: 'Pipeline by therapeutic area / line item / month, pulled from HubSpot sync. Each deal is allocated to a TA via the rules below.',
+  engineRef: 'hubspot_per_ta_monthly',
   blocks: [
     { kind: 'title', text: 'Deal → TA allocation rules' },
     { kind: 'paragraph', italic: true,
@@ -235,6 +237,7 @@ const totalRevenueSection: ReportSection = {
   id: 'total-revenue',
   label: 'Total Revenue',
   hint: 'HubSpot pipeline + modeled per-TA revenue.',
+  engineRef: 'revenue_monthly',
   blocks: [
     { kind: 'title', text: 'Per-TA revenue (modeled + HubSpot + adjustments)' },
     { kind: 'paragraph', italic: true,
@@ -311,6 +314,7 @@ const employeesSection: ReportSection = {
   id: 'employees',
   label: 'Employees',
   hint: 'Headcount roster and monthly cost build-up (loaded salary × inflation).',
+  engineRef: 'employee_total_monthly',
   blocks: [
     { kind: 'title', text: 'Cost assumptions' },
     {
@@ -470,6 +474,7 @@ const costsSection: ReportSection = {
   id: 'costs',
   label: 'Costs',
   hint: 'Per-department budgets: Staff Costs (from Employees), Sales Commission (derived, S&M only), line items, and total — laid out like the v4 spreadsheet.',
+  engineRef: 'cost_dept_total_monthly',
   blocks: [
     { kind: 'title', text: 'Departmental cost detail' },
     ...COST_DEPTS.flatMap(perDeptBlocks),
@@ -549,6 +554,7 @@ const budgetSection: ReportSection = {
   id: 'budget',
   label: 'Budget P&L',
   hint: 'Profit & Loss layout matching the v4 Budgets sheet — revenue per TA, cost of sales, gross profit, opex per dept, EBITDA.',
+  engineRef: 'budget_monthly_full_pl',
   blocks: [
     { kind: 'title', text: 'Capital depreciation (input — booked below EBITDA)' },
     {
@@ -826,6 +832,7 @@ const bsAssumptionsBlock: ReportBlock = {
 const balanceSheetSection: ReportSection = {
   id: 'balance-sheet',
   label: 'Balance Sheet',
+  engineRef: 'bs_summary_monthly',
   hint:
     'v4-aligned balance sheet built from the opening position + monthly P&L. ' +
     'Tangible assets write down via cumulative depreciation; trade debtors / creditors ' +

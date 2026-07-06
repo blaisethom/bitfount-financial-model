@@ -1,0 +1,1330 @@
+calendar: dates_t
+hidden_sheets: [dates_t, per_employee_monthly_cost]
+
+vars:
+  active_tas: [Ophthalmology, TA2, TA3, TA4, TA5]
+  cost_depts: ["Sales and Marketing", "G&A", Engineering, "Product Support"]
+  year_rollup:
+    year_totals: true
+    grand_total: true
+    grand_total_label: "6-yr Total"
+  month_axis:
+    col: month_idx
+    labels: dates
+  type_labels:
+    A: "Type A (Small)"
+    B: "Type B (Medium)"
+    C: "Type C (Large)"
+  cost_line_items:
+    "Sales and Marketing":
+      - "US staff on-costs"
+      - "Events"
+      - "Comms"
+      - "Web site"
+      - "Advertising"
+      - "Consultants"
+      - "Sales literature"
+      - "Entertainment "
+      - "Travel - National"
+      - "Travel - International"
+    "G&A":
+      - "Bonus"
+      - "Staff Welfare"
+      - "Recruitment"
+      - "Insurance"
+      - "Rent"
+      - "Building costs"
+      - "Cleaning"
+      - "Telephone & Internet"
+      - "IT costs"
+      - "Printing and stationery"
+      - "Postage, freight and courier services"
+      - "Accounting and Audit"
+      - "Professional Fees"
+      - "Legal Fees"
+      - "Consultants"
+      - "Subscriptions"
+      - "Training"
+      - "Travel"
+      - "Entertaining"
+      - "Bank charges"
+      - "Management Expenses"
+    Engineering:
+      - "Bonus"
+      - "Contractors"
+      - "Consumables"
+      - "Travel"
+      - "Approvals"
+      - "Validation Data"
+      - "Expenses and Consumables"
+      - "IT Software and Consumables"
+    "Product Support":
+      - "Bonus"
+      - "Travel"
+      - "Technical services"
+      - "IT Security"
+
+templates:
+  per_ta:
+    params: [ta]
+    blocks:
+      - kind: title
+        text: "{ta}"
+        level: 2
+      - kind: title
+        text: "{ta} — client starts per month"
+        level: 3
+      - kind: table
+        source: schedule_t
+        filter:
+          ta: "{ta}"
+        axis: $month_axis
+        rows:
+          kind: pivot-rows
+          label_col: type
+          label_header: Type
+          value_col: starts
+          label_map: $type_labels
+          format: count
+        totals_row:
+          label: Total starts
+        rollup: $year_rollup
+        default_format: count
+        canonical: [schedule_t]
+      - kind: title
+        text: "{ta} — active trials per month"
+        level: 3
+      - kind: table
+        source: active_by_ta_type_month
+        filter:
+          ta: "{ta}"
+        axis: $month_axis
+        rows:
+          kind: pivot-rows
+          label_col: type
+          label_header: Type
+          value_col: active
+          label_map: $type_labels
+          format: count
+        totals_row:
+          label: Total active
+          bold: true
+        rollup: $year_rollup
+        default_format: count
+      - kind: title
+        text: "{ta} — modeller commission ($)"
+        level: 3
+      - kind: table
+        source: modeller_commission_per_ta_monthly
+        filter:
+          ta: "{ta}"
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: commission
+              label: Modeller commission
+        rollup: $year_rollup
+      - kind: spacer
+        rows: 1
+
+  per_dept_sm:
+    params: [dept]
+    blocks:
+      - kind: title
+        text: "{dept}"
+        level: 2
+      - kind: table
+        source: cost_line_items_t
+        axis: $month_axis
+        default_format: money
+        rollup: $year_rollup
+        canonical: [cost_line_items_t]
+        rows:
+          kind: explicit
+          label_header: Line
+          rows:
+            - source: cost_dept_total_monthly_with_actuals
+              identity:
+                cost_dept: "{dept}"
+              value_col: staff
+              label: Staff Costs
+            - source: sales_commission_monthly
+              identity: {}
+              value_col: sales_commission
+              label: "Sales Commission (modeled)"
+            - for_each: $cost_line_items.{dept}
+              as: line_item
+              source: cost_line_items_t
+              identity:
+                dept: "{dept}"
+                line_name: "{line_item}"
+              value_col: value
+              label: "{line_item}"
+            - source: cost_dept_total_monthly_with_actuals
+              identity:
+                cost_dept: "{dept}"
+              value_col: total
+              label: "Total {dept}"
+              bold: true
+      - kind: spacer
+        rows: 1
+
+  per_dept_other:
+    params: [dept]
+    blocks:
+      - kind: title
+        text: "{dept}"
+        level: 2
+      - kind: table
+        source: cost_line_items_t
+        axis: $month_axis
+        default_format: money
+        rollup: $year_rollup
+        canonical: [cost_line_items_t]
+        rows:
+          kind: explicit
+          label_header: Line
+          rows:
+            - source: cost_dept_total_monthly_with_actuals
+              identity:
+                cost_dept: "{dept}"
+              value_col: staff
+              label: Staff Costs
+            - for_each: $cost_line_items.{dept}
+              as: line_item
+              source: cost_line_items_t
+              identity:
+                dept: "{dept}"
+                line_name: "{line_item}"
+              value_col: value
+              label: "{line_item}"
+            - source: cost_dept_total_monthly_with_actuals
+              identity:
+                cost_dept: "{dept}"
+              value_col: total
+              label: "Total {dept}"
+              bold: true
+      - kind: spacer
+        rows: 1
+
+  per_dept_yearly:
+    params: [dept]
+    blocks:
+      - kind: title
+        text: "{dept}"
+        level: 3
+      - kind: table
+        source: cost_dept_yearly
+        filter:
+          cost_dept: "{dept}"
+        rows:
+          kind: value-columns
+          columns:
+            - col: staff
+              label: Staff
+            - col: non_staff
+              label: Non-staff
+            - col: total
+              label: Total opex
+              bold: true
+        default_format: money
+
+  per_dept_actuals:
+    params: [dept]
+    blocks:
+      - kind: title
+        text: "{dept} — monthly actuals"
+        level: 3
+      - kind: table
+        source: cost_dept_monthly_actuals_t
+        filter:
+          cost_dept: "{dept}"
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: staff_actual
+              label: "Staff (actual)"
+            - col: non_staff_actual
+              label: "Non-staff (actual)"
+            - col: total_actual
+              label: "Total (actual)"
+        rollup: $year_rollup
+        default_format: money
+        canonical: [cost_dept_monthly_actuals_t]
+
+sections:
+  - id: revenue-model
+    label: Revenue Model
+    hint: "Pricing, per-TA monthly revenue (starts → active → platform / project / PM), modeller commission, aggregates."
+    blocks:
+      - kind: title
+        text: Pricing assumptions
+      - kind: table
+        id: pricing
+        source: pricing_t
+        rows:
+          kind: table-rows
+          label_col: type
+          label_header: Type
+          column_formats:
+            sites: count
+        default_format: money
+        canonical: [pricing_t]
+      - kind: spacer
+        rows: 1
+      - kind: title
+        text: Commission assumptions
+      - kind: table
+        id: commission
+        source: commission_t
+        rows:
+          kind: value-columns
+          columns:
+            - col: rate
+              label: "Modeller commission rate"
+              format: percent
+            - col: cap_per_month
+              label: "Modeller cap (per TA / month)"
+              format: money
+            - col: sales_per_client
+              label: "Sales commission per new client"
+              format: money
+            - col: sales_invoice_rate
+              label: "Sales commission invoice rate"
+              format: percent
+        canonical: [commission_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Monthly revenue ($)"
+      - kind: table
+        id: monthly-revenue
+        source: ta_monthly_total
+        axis: $month_axis
+        rows:
+          kind: explicit
+          label_header: ""
+          rows:
+            - source: hubspot_total_monthly
+              identity: {}
+              value_col: hubspot
+              label: "HubSpot pipeline (subtotal)"
+              bold: true
+            - for_each: $active_tas
+              as: ta
+              identity:
+                ta: "{ta}"
+              value_col: total
+              label: "{ta}"
+            - source: modeled_total_monthly
+              identity: {}
+              value_col: total
+              label: "Modeled TAs (subtotal)"
+              bold: true
+            - source: revenue_monthly
+              identity: {}
+              value_col: revenue
+              label: "Grand total (HubSpot + modeled)"
+              bold: true
+        rollup: $year_rollup
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: Per-therapeutic-area monthly detail
+      - kind: repeat
+        template: per_ta
+        over: $active_tas
+        bind: ta
+      - kind: title
+        text: "Aggregates (used by Costs / Budget)"
+      - kind: table
+        id: starts-aggregate
+        source: starts_per_month
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: total_starts
+              label: "Total client starts"
+              format: count
+        rollup: $year_rollup
+        default_format: count
+      - kind: table
+        id: commission-aggregate
+        source: modeller_commission_monthly
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: modeller_commission
+              label: "Total modeller commission"
+        rollup: $year_rollup
+
+  - id: hubspot
+    label: HubSpot Pipeline
+    hint: "Pipeline by therapeutic area / line item / month, pulled from HubSpot sync. Each deal is allocated to a TA via the rules below."
+    blocks:
+      - kind: title
+        text: "Deal → TA allocation rules"
+      - kind: paragraph
+        italic: true
+        text: "Case-insensitive regex tested against each deal name during sync. The first matching rule's TA wins; if no rule matches, the deal goes to the default TA (\"Ophthalmology\"). Rules take effect on the next \"Sync from HubSpot\". To add a new TA: set the pattern (e.g. `\\b(liver|mash|hepatic)\\b`) and the TA name (e.g. `Hepatology`); the engine starts bucketing matching deals there."
+      - kind: table
+        id: ta-rules
+        source: hubspot_ta_rules_t
+        rows:
+          kind: table-rows
+          label_col: idx
+          label_header: "#"
+        canonical: [hubspot_ta_rules_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "HubSpot pipeline per TA × month"
+      - kind: table
+        id: per-ta-monthly
+        source: hubspot_per_ta_monthly
+        axis: $month_axis
+        rows:
+          kind: pivot-rows
+          label_header: TA
+          label_col: ta
+          value_col: hubspot
+          format: money
+        totals_row:
+          label: "Total HubSpot pipeline"
+          bold: true
+        rollup: $year_rollup
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "HubSpot pipeline by line item × month"
+      - kind: table
+        id: by-line-item
+        source: hubspot_pipeline_t
+        axis: $month_axis
+        rows:
+          kind: pivot-rows
+          label_header: "Line item"
+          label_col: line_item
+          value_col: value
+          format: money
+        totals_row:
+          label: Total
+          bold: true
+        rollup: $year_rollup
+        canonical: [hubspot_pipeline_t]
+
+  - id: total-revenue
+    label: Total Revenue
+    hint: "HubSpot pipeline + modeled per-TA revenue."
+    blocks:
+      - kind: title
+        text: "Per-TA revenue (modeled + HubSpot + adjustments)"
+      - kind: paragraph
+        italic: true
+        text: "Each TA row stacks its modeled pipeline (platform + project + PM), its allocated HubSpot pipeline, any manual revenue adjustments, and the total. Deals are bucketed into TAs at sync time using the rules on the HubSpot tab; with the default config every HubSpot deal routes to Ophthalmology. Adjustments default to v4's six 2026 Ophthalmology budget tweaks."
+      - kind: table
+        id: per-ta
+        source: ta_monthly_with_hubspot
+        axis: $month_axis
+        rows:
+          kind: explicit
+          label_header: TA
+          rows:
+            - identity:
+                ta: Ophthalmology
+              value_col: total_modeled
+              label: "Ophthalmology — modeled"
+            - identity:
+                ta: Ophthalmology
+              value_col: hubspot
+              label: "Ophthalmology — HubSpot"
+            - identity:
+                ta: Ophthalmology
+              value_col: adjustment
+              label: "Ophthalmology — adjustment"
+            - identity:
+                ta: Ophthalmology
+              value_col: total
+              label: "Ophthalmology — total"
+              bold: true
+            - identity:
+                ta: TA2
+              value_col: total_modeled
+              label: "TA2 — modeled"
+            - identity:
+                ta: TA2
+              value_col: hubspot
+              label: "TA2 — HubSpot"
+            - identity:
+                ta: TA2
+              value_col: adjustment
+              label: "TA2 — adjustment"
+            - identity:
+                ta: TA2
+              value_col: total
+              label: "TA2 — total"
+              bold: true
+            - identity:
+                ta: TA3
+              value_col: total_modeled
+              label: "TA3 — modeled"
+            - identity:
+                ta: TA3
+              value_col: hubspot
+              label: "TA3 — HubSpot"
+            - identity:
+                ta: TA3
+              value_col: adjustment
+              label: "TA3 — adjustment"
+            - identity:
+                ta: TA3
+              value_col: total
+              label: "TA3 — total"
+              bold: true
+            - identity:
+                ta: TA4
+              value_col: total_modeled
+              label: "TA4 — modeled"
+            - identity:
+                ta: TA4
+              value_col: hubspot
+              label: "TA4 — HubSpot"
+            - identity:
+                ta: TA4
+              value_col: adjustment
+              label: "TA4 — adjustment"
+            - identity:
+                ta: TA4
+              value_col: total
+              label: "TA4 — total"
+              bold: true
+            - identity:
+                ta: TA5
+              value_col: total_modeled
+              label: "TA5 — modeled"
+            - identity:
+                ta: TA5
+              value_col: hubspot
+              label: "TA5 — HubSpot"
+            - identity:
+                ta: TA5
+              value_col: adjustment
+              label: "TA5 — adjustment"
+            - identity:
+                ta: TA5
+              value_col: total
+              label: "TA5 — total"
+              bold: true
+        rollup: $year_rollup
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Manual revenue adjustments (per-TA per-month)"
+      - kind: paragraph
+        italic: true
+        text: "Each row adds `value` to one (TA, month) cell on top of modeled + HubSpot. Used to reproduce v4's hand-edited budget tweaks: Jan/Feb/Mar 2026 Ophthalmology formulas (`+ 33,165 × 1.32 − 8,000`, `+ 12,869 × 1.32`, `+ 31,919 × 1.32 − 26,900`) and the Oct/Nov/Dec 2026 hardcoded +$50k/mo pasted into Revenue!row 19. Together these close the previously-documented 2026 gap of $217,998. Edit `value` to tune; idx/date are read-only labels."
+      - kind: table
+        id: adjustments
+        source: revenue_adjustments_t
+        rows:
+          kind: table-rows
+          label_col: idx
+          label_header: "#"
+          column_formats:
+            month_idx: integer
+            value: money
+        canonical: [revenue_adjustments_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Monthly revenue ($)"
+      - kind: table
+        id: monthly
+        source: ta_monthly_total
+        axis: $month_axis
+        rows:
+          kind: explicit
+          rows:
+            - source: hubspot_total_monthly
+              identity: {}
+              value_col: hubspot
+              label: "HubSpot pipeline (subtotal)"
+              bold: true
+            - for_each: $active_tas
+              as: ta
+              identity:
+                ta: "{ta}"
+              value_col: total
+              label: "{ta}"
+            - source: modeled_total_monthly
+              identity: {}
+              value_col: total
+              label: "Modeled TAs (subtotal)"
+              bold: true
+            - source: revenue_monthly
+              identity: {}
+              value_col: revenue
+              label: "Grand total (HubSpot + modeled)"
+              bold: true
+        rollup: $year_rollup
+
+  - id: employees
+    label: Employees
+    hint: "Headcount roster and monthly cost build-up (loaded salary × inflation)."
+    blocks:
+      - kind: title
+        text: Cost assumptions
+      - kind: table
+        id: assumptions
+        source: employee_assumptions_t
+        rows:
+          kind: value-columns
+          columns:
+            - col: ni_rate
+              label: NI rate
+              format: percent
+            - col: pension_rate
+              label: Pension rate
+              format: percent
+            - col: inflation_rate
+              label: Annual inflation rate
+              format: percent
+            - col: inflation_start_year
+              label: Inflation start year
+              format: integer
+            - col: inflation_start_month
+              label: Inflation start month
+              format: integer
+        canonical: [employee_assumptions_t]
+      - kind: spacer
+        rows: 1
+      - kind: table
+        id: assumptions-flags
+        source: employee_assumptions_t
+        rows:
+          kind: value-columns
+          columns:
+            - col: max_inflation_steps
+              label: "Max inflation steps (v4 bug: 4)"
+              format: integer
+            - col: inflate_future_hires
+              label: "Inflate future hires (v4 bug: false)"
+        canonical: [employee_assumptions_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Salary adjustments (per-employee monthly multipliers)"
+      - kind: paragraph
+        italic: true
+        text: "Each row sets a multiplier on one employee's cleanly-computed monthly cost that applies from `month_idx` forward until a later row for the same employee overrides it. Default rows reproduce v4's hand-edited per-cell tweaks: Naaman Tammuz ×0.8 from Apr 2026, Blaise Thomson ×0.66 from Apr 2026 then ×2.8052 from Apr 2027 (tracks Naaman's salary). Edit the factor and note columns; the employee, month, and date are read-only labels."
+      - kind: table
+        id: salary-adjustments
+        source: employee_adjustments_sparse_t
+        rows:
+          kind: table-rows
+          label_col: employee_id
+          label_header: Employee ID
+          column_formats:
+            month_idx: integer
+            factor: decimal
+        canonical: [employee_adjustments_sparse_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: Employees roster
+      - kind: table
+        id: roster
+        source: employees_t
+        rows:
+          kind: table-rows
+          label_col: id
+          label_header: ID
+        canonical: [employees_t]
+      - kind: spacer
+        rows: 2
+      - kind: chart
+        id: headcount
+        ref: staff-headcount
+        title: "Staff headcount over time"
+      - kind: spacer
+        rows: 1
+      - kind: title
+        text: "Employee cost by department × month (with actuals overlay)"
+      - kind: table
+        id: cost-by-dept
+        source: cost_dept_total_monthly_with_actuals
+        axis: $month_axis
+        rows:
+          kind: pivot-rows
+          label_header: Department
+          label_col: cost_dept
+          value_col: staff
+          format: money
+        totals_row:
+          label: Total employee cost
+          bold: true
+        rollup: $year_rollup
+
+  - id: costs
+    label: Costs
+    hint: "Per-department budgets: Staff Costs (from Employees), Sales Commission (derived, S&M only), line items, and total — laid out like the v4 spreadsheet."
+    blocks:
+      - kind: title
+        text: Departmental cost detail
+      - kind: repeat
+        template: per_dept_sm
+        over: ["Sales and Marketing"]
+        bind: dept
+      - kind: repeat
+        template: per_dept_other
+        over: ["G&A", Engineering, "Product Support"]
+        bind: dept
+      - kind: title
+        text: "Roll-up: all departments (with actuals overlay)"
+      - kind: table
+        id: rollup
+        source: cost_dept_total_monthly_with_actuals
+        axis: $month_axis
+        rows:
+          kind: pivot-rows
+          label_header: Department
+          label_col: cost_dept
+          value_col: total
+          format: money
+        totals_row:
+          label: Total opex
+          bold: true
+        rollup: $year_rollup
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Per-dept yearly opex (derived from monthly + actuals)"
+      - kind: repeat
+        template: per_dept_yearly
+        over: $cost_depts
+        bind: dept
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Per-dept monthly actuals (override modeled values)"
+      - kind: paragraph
+        italic: true
+        text: "Pin per-dept monthly opex to specific values when the modeled output drifts from v4 (e.g. G&A staff cost where v4's Employees sheet uses ad-hoc per-employee multipliers — David Friend × 0.66, blank \"Extra\" rows, no inflation in some cells — that our clean 5%-each-April model doesn't replicate). Blank cells fall through to the modeled value. Yearly per-dept totals above derive automatically."
+      - kind: repeat
+        template: per_dept_actuals
+        over: $cost_depts
+        bind: dept
+
+  - id: budget
+    label: Budget P&L
+    hint: "Profit & Loss layout matching the v4 Budgets sheet — revenue per TA, cost of sales, gross profit, opex per dept, EBITDA."
+    blocks:
+      - kind: title
+        text: "Capital depreciation (input — booked below EBITDA)"
+      - kind: table
+        id: depreciation
+        source: depreciation_t
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: value
+              label: Capital depreciation
+        rollup: $year_rollup
+        canonical: [depreciation_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "R&D tax credit (input — booked below operating profit)"
+      - kind: paragraph
+        italic: true
+        text: "Per-month R&D tax credit (positive = credit). Defaults reproduce v4: $437k 2026, $330k 2027, $330k 2028, $0 thereafter — smoothed evenly across each year. Edit any monthly cell to override."
+      - kind: table
+        id: rd-tax
+        source: rd_tax_credit_t
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: value
+              label: "R&D tax credit"
+        rollup: $year_rollup
+        canonical: [rd_tax_credit_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Interest income (input — booked between EBITDA and operating profit)"
+      - kind: paragraph
+        italic: true
+        text: "Per-month interest income on cash (positive = income). Defaults reproduce v4 (Budgets!G48/H48): £21,975 in Jan-2026 and £1,579 in Feb-2026, then £0 — v4 carries no interest beyond Q1-2026. Edit any cell to model interest on the running cash balance in later periods."
+      - kind: table
+        id: interest
+        source: interest_income_t
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: value
+              label: Interest income
+        rollup: $year_rollup
+        canonical: [interest_income_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Sales commission overrides (per-month)"
+      - kind: paragraph
+        italic: true
+        text: "v4's S&M Commission line is fully hardcoded — every monthly cell is a pasted value with no underlying formula, and the late-year values plateau around $145k/month, well below what our cap-based formula `min(6k×starts + 12%×revenue, 1.5 × Total Sales Salary)` produces. Each cell here overrides the modelled value for that month. Defaults are populated from v4 (costs_data.json) so we match S&M Commission to the cent out of the box. Clear a cell to fall back to the formula."
+      - kind: table
+        id: sales-commission-overrides
+        source: sales_commission_overrides_t
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: value
+              label: "Sales commission (override; blank = formula)"
+        rollup: $year_rollup
+        canonical: [sales_commission_overrides_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Modeller commission adjustments (per-month additions)"
+      - kind: paragraph
+        italic: true
+        text: "Each row adds `value` (positive = additional cost) to the modelled monthly modeller commission. Defaults reproduce v4's four hand-entered Jan/Feb/Mar/May 2026 Budgets!row 22 entries — historic commitments paid before the AI-revenue ramp begins (where our `min(0.8 × AI_revenue, $30k)` formula yields $0). The May entry is a $5,000 hardcoded value with no formula in v4; Jan/Feb/Mar are GBP amounts scaled by 1.32 USD/GBP. Edit `value` to tune; idx/date are read-only labels."
+      - kind: table
+        id: commission-adjustments
+        source: modeller_commission_adjustments_t
+        rows:
+          kind: table-rows
+          label_col: idx
+          label_header: "#"
+          column_formats:
+            month_idx: integer
+            value: money
+        canonical: [modeller_commission_adjustments_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Profit & Loss (monthly — with actuals overlay)"
+      - kind: table
+        id: pnl-monthly
+        source: budget_monthly_with_actuals
+        axis: $month_axis
+        rows:
+          kind: explicit
+          label_header: Line
+          rows:
+            - for_each: $active_tas
+              as: ta
+              source: ta_monthly_total
+              identity:
+                ta: "{ta}"
+              value_col: total
+              label: "{ta}"
+            - source: hubspot_total_monthly
+              identity: {}
+              value_col: hubspot
+              label: "HubSpot pipeline (subtotal)"
+            - source: budget_monthly_with_actuals
+              identity: {}
+              value_col: revenue
+              label: Total Revenue
+              bold: true
+            - source: modeller_commission_monthly
+              identity: {}
+              value_col: modeller_commission
+              label: Modeller Commission
+            - source: budget_monthly_with_actuals
+              identity: {}
+              value_col: cost_of_sales
+              label: Total Cost of Sales
+              bold: true
+            - source: budget_monthly_with_actuals
+              identity: {}
+              value_col: gross_profit
+              label: GROSS PROFIT
+              bold: true
+            - for_each: $cost_depts
+              as: dept
+              source: cost_dept_total_monthly_with_actuals
+              identity:
+                cost_dept: "{dept}"
+              value_col: total
+              label: "{dept}"
+            - source: budget_monthly_with_actuals
+              identity: {}
+              value_col: total_opex
+              label: Total Opex
+              bold: true
+            - source: budget_monthly_with_actuals
+              identity: {}
+              value_col: ebitda
+              label: EBITDA
+              bold: true
+            - source: budget_monthly_full_pl
+              identity: {}
+              value_col: depreciation
+              label: Capital depreciation
+            - source: budget_monthly_full_pl
+              identity: {}
+              value_col: interest_income
+              label: Interest income
+            - source: budget_monthly_full_pl
+              identity: {}
+              value_col: operating_profit
+              label: Operating Profit
+              bold: true
+            - source: budget_monthly_full_pl
+              identity: {}
+              value_col: rd_tax_credit
+              label: "R&D Tax Credit"
+            - source: budget_monthly_full_pl
+              identity: {}
+              value_col: profit_after_tax
+              label: PROFIT AFTER TAX
+              bold: true
+        rollup: $year_rollup
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Profit & Loss (yearly — derived from monthly with actuals)"
+      - kind: table
+        id: pnl-yearly
+        source: budget_yearly
+        rows:
+          kind: value-columns
+          columns:
+            - col: revenue
+              label: Revenue
+              bold: true
+            - col: cost_of_sales
+              label: Cost of sales
+            - col: gross_profit
+              label: Gross profit
+              bold: true
+            - col: total_opex
+              label: Total opex
+            - col: ebitda
+              label: EBITDA
+              bold: true
+            - col: depreciation
+              label: Capital depreciation
+            - col: interest_income
+              label: Interest income
+            - col: operating_profit
+              label: Operating profit
+              bold: true
+            - col: rd_tax_credit
+              label: R&D tax credit
+            - col: profit_after_tax
+              label: Profit after tax
+              bold: true
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Monthly P&L actuals (override modeled values to pin to v4)"
+      - kind: paragraph
+        italic: true
+        text: "Enter v4's monthly values here to override the modeled monthly P&L. Blank cells fall through to the modeled value; entering any number (including 0) pins the line to that value for that month. The monthly view above and yearly rollup both derive from these overrides — pasting the v4 monthly row gives a matching yearly total automatically."
+      - kind: table
+        id: pnl-actuals
+        source: pnl_monthly_actuals_t
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: revenue_actual
+              label: "Revenue (actual)"
+            - col: cost_of_sales_actual
+              label: "Cost of sales (actual)"
+            - col: gross_profit_actual
+              label: "Gross profit (actual)"
+            - col: total_opex_actual
+              label: "Total opex (actual)"
+            - col: ebitda_actual
+              label: "EBITDA (actual)"
+        rollup: $year_rollup
+        default_format: money
+        canonical: [pnl_monthly_actuals_t]
+      - kind: paragraph
+        italic: true
+        text: "Below EBITDA we now book Capital Depreciation and R&D Tax Credit explicitly (matching v4's P&L layout). The remaining v4 below-line items — Other Income / Exceptional / Interest / Amortisation / Financing Costs / Corporation Tax — are zero or immaterial in the v4 forecast (Corporation Tax kicks in 2029+ and tracks ~19% of operating profit). The Balance Sheet's Current Earnings line is cumulative profit-after-tax, so the BS now matches v4 within those omitted lines."
+
+  - id: balance-sheet
+    label: Balance Sheet
+    hint: "v4-aligned balance sheet built from the opening position + monthly P&L. Tangible assets write down via cumulative depreciation; trade debtors / creditors scale with revenue / opex via AR & AP days; cash closes the loop (Net Assets = Equity)."
+    blocks:
+      - kind: title
+        text: Opening position
+      - kind: table
+        id: opening
+        source: opening_bs_t
+        rows:
+          kind: value-columns
+          columns:
+            - col: opening_cash
+              label: Opening cash
+              format: money
+            - col: opening_tangible_assets
+              label: Opening tangible assets
+              format: money
+            - col: opening_intangible_assets
+              label: Opening intangible assets
+              format: money
+            - col: opening_trade_debtors
+              label: Opening trade debtors
+              format: money
+            - col: opening_other_debtors
+              label: "Other debtors (constant)"
+              format: money
+            - col: opening_vat
+              label: "VAT (constant)"
+              format: money
+            - col: opening_trade_creditors
+              label: "Opening trade creditors (–)"
+              format: money
+            - col: opening_deferred_revenue
+              label: "Deferred revenue (constant)"
+              format: money
+            - col: opening_other_creditors
+              label: "Other creditors (constant)"
+              format: money
+            - col: opening_loans
+              label: "Opening loans (–)"
+              format: money
+            - col: share_capital
+              label: Share capital
+              format: money
+            - col: share_premium
+              label: Share premium
+              format: money
+            - col: other_reserve
+              label: Other reserve
+              format: money
+            - col: bfwd_retained_earnings
+              label: BFWD retained earnings
+              format: money
+        canonical: [opening_bs_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Working-capital + loan assumptions"
+      - kind: table
+        id: bs-assumptions
+        source: bs_assumptions_t
+        rows:
+          kind: value-columns
+          columns:
+            - col: ar_days
+              label: "AR days (drives trade debtors)"
+              format: integer
+            - col: ap_days
+              label: "AP days (drives trade creditors)"
+              format: integer
+            - col: monthly_loan_repayment
+              label: Monthly loan repayment
+              format: money
+        canonical: [bs_assumptions_t]
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Balance Sheet (monthly, end-of-period — with actuals overlay)"
+      - kind: table
+        id: monthly
+        source: bs_summary_monthly_with_actuals
+        axis: $month_axis
+        rows:
+          kind: explicit
+          label_header: Line
+          rows:
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: intangible_assets
+              label: Intangible Assets
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: tangible_assets
+              label: Tangible Assets
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: total_fixed_assets
+              label: Total Fixed Assets
+              bold: true
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: trade_debtors
+              label: Trade Debtors
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: other_debtors
+              label: Other debtors
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: vat
+              label: VAT
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: cash
+              label: Cash
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: total_current_assets
+              label: Total Current Assets
+              bold: true
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: trade_creditors
+              label: Trade Creditors
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: deferred_revenue
+              label: Deferred Revenue
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: other_creditors
+              label: Other creditors
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: total_current_liabilities
+              label: Total Current Liabilities
+              bold: true
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: loans
+              label: Loans
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: net_assets
+              label: Net Assets
+              bold: true
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: share_capital
+              label: Share capital
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: share_premium
+              label: Share premium
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: other_reserve
+              label: Other reserve
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: bfwd_retained_earnings
+              label: BFWD retained earnings
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: current_earnings
+              label: "Current earnings (cumulative PaT)"
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: total_equity
+              label: Total Equity
+              bold: true
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: difference
+              label: "Difference (Net Assets − Equity)"
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: v4_opening_restatement
+              label: "v4 opening retained-earnings restatement (add-back)"
+            - source: bs_summary_monthly_with_actuals
+              identity: {}
+              value_col: net_assets_v4_basis
+              label: "Net Assets (v4 basis — reconciles to v4)"
+              bold: true
+        rollup:
+          grand_total: true
+          grand_total_label: End of horizon
+        default_format: money
+      - kind: paragraph
+        italic: true
+        text: "Modeling notes: (1) Tangible assets follow the per-month capex schedule less cumulative depreciation, floored at 0 — v4's depreciation schedule writes off more than was ever capitalised (~$189k over the horizon), so the raw book value would go negative; we floor it and add the disallowed depreciation back to Current Earnings so the sheet still balances. (2) Trade debtors = revenue × AR days / 30; the four other working-capital lines (trade creditors, other debtors, VAT, other creditors) come from per-month v4 closing balances in bs_monthly_schedule_t. (3) Current earnings = cumulative profit-after-tax (EBITDA − depreciation + R&D tax credit), so the BS reflects the real post-tax position within the limit that we don't model Corporation Tax (kicks in 2029+ in v4, ~19% of operating profit). (4) Cash = opening + cum PaT + cum depreciation add-back − cum capex − cum loan repayments − ΔWC — textbook indirect-method waterfall, so the BS balances (Difference rounds to zero). (5) Reconciliation to v4: v4 rebases opening retained earnings at Jan-2026 by +£398,942 above what its own Dec-2025 close supports (an unreconciled v4 restatement). We keep the correct figure, so our Net Assets sits ~£417k below v4 every year; the \"v4 opening restatement\" add-back and \"Net Assets (v4 basis)\" lines make this explicit — the v4-basis figure ties to v4 within the ~£18k current-earnings timing difference."
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Balance Sheet (yearly — end-of-year, derived)"
+      - kind: table
+        id: yearly
+        source: bs_yearly_with_actuals
+        axis:
+          col: year
+          labels: raw
+        rows:
+          kind: value-columns
+          columns:
+            - col: intangible_assets
+              label: Intangible Assets
+            - col: tangible_assets
+              label: Tangible Assets
+            - col: total_fixed_assets
+              label: Total Fixed Assets
+              bold: true
+            - col: trade_debtors
+              label: Trade Debtors
+            - col: other_debtors
+              label: Other debtors
+            - col: vat
+              label: VAT
+            - col: cash
+              label: Cash
+            - col: total_current_assets
+              label: Total Current Assets
+              bold: true
+            - col: trade_creditors
+              label: Trade Creditors
+            - col: deferred_revenue
+              label: Deferred Revenue
+            - col: other_creditors
+              label: Other creditors
+            - col: total_current_liabilities
+              label: Total Current Liabilities
+              bold: true
+            - col: loans
+              label: Loans
+            - col: net_assets
+              label: Net Assets
+              bold: true
+            - col: share_capital
+              label: Share capital
+            - col: share_premium
+              label: Share premium
+            - col: other_reserve
+              label: Other reserve
+            - col: bfwd_retained_earnings
+              label: BFWD retained earnings
+            - col: current_earnings
+              label: Current earnings
+            - col: total_equity
+              label: Total Equity
+              bold: true
+            - col: difference
+              label: "Difference (Net Assets − Equity)"
+            - col: v4_opening_restatement
+              label: "v4 opening retained-earnings restatement (add-back)"
+            - col: net_assets_v4_basis
+              label: "Net Assets (v4 basis — reconciles to v4)"
+              bold: true
+        default_format: money
+      - kind: spacer
+        rows: 2
+      - kind: title
+        text: "Monthly BS actuals (override modeled values)"
+      - kind: paragraph
+        italic: true
+        text: "Pin individual balance sheet lines to v4 monthly values. Subtotals (Total Fixed Assets, Current Assets/Liabilities, Net Assets, Total Equity) recompute from the overridden lines per month. The yearly view above picks the December (end-of-year) rows. The Difference row shows how far the overridden BS is from balancing."
+      - kind: table
+        id: actuals
+        source: bs_monthly_actuals_t
+        axis: $month_axis
+        rows:
+          kind: value-columns
+          columns:
+            - col: intangible_assets_actual
+              label: "Intangible Assets (actual)"
+            - col: tangible_assets_actual
+              label: "Tangible Assets (actual)"
+            - col: trade_debtors_actual
+              label: "Trade Debtors (actual)"
+            - col: other_debtors_actual
+              label: "Other debtors (actual)"
+            - col: vat_actual
+              label: "VAT (actual)"
+            - col: cash_actual
+              label: "Cash (actual)"
+            - col: trade_creditors_actual
+              label: "Trade Creditors (actual)"
+            - col: deferred_revenue_actual
+              label: "Deferred Revenue (actual)"
+            - col: other_creditors_actual
+              label: "Other creditors (actual)"
+            - col: loans_actual
+              label: "Loans (actual)"
+            - col: share_capital_actual
+              label: "Share capital (actual)"
+            - col: share_premium_actual
+              label: "Share premium (actual)"
+            - col: other_reserve_actual
+              label: "Other reserve (actual)"
+            - col: bfwd_retained_earnings_actual
+              label: "BFWD retained earnings (actual)"
+            - col: current_earnings_actual
+              label: "Current earnings (actual)"
+        default_format: money
+        canonical: [bs_monthly_actuals_t]
+
+tabs:
+  - id: total
+    label: Total Revenue
+    content:
+      type: list
+      items:
+        - type: table
+          ref: yaml-total-revenue
+
+  - id: budget
+    label: Budget P&L
+    content:
+      type: list
+      items:
+        - type: table
+          ref: yaml-budget
+
+  - id: balance-sheet
+    label: Balance Sheet
+    content:
+      type: list
+      items:
+        - type: table
+          ref: yaml-balance-sheet
+
+  - id: model
+    label: Revenue Model
+    content:
+      type: list
+      items:
+        - type: table
+          ref: yaml-revenue-model
+
+  - id: hubspot
+    label: HubSpot
+    content:
+      type: list
+      items:
+        - type: table
+          ref: yaml-hubspot
+
+  - id: hubspot-deals
+    label: HubSpot Deals
+    content:
+      type: list
+      items:
+        - type: table
+          ref: hubspot_pipeline_t
+          title: HubSpot pipeline by line item
+
+  - id: employees
+    label: Employees
+    content:
+      type: list
+      items:
+        - type: chart
+          ref: staff-headcount
+        - type: table
+          ref: yaml-employees
+
+  - id: costs
+    label: Costs
+    content:
+      type: list
+      items:
+        - type: table
+          ref: yaml-costs

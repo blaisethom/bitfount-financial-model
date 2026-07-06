@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface Props {
   open: boolean;
@@ -9,33 +9,26 @@ interface Props {
 }
 
 export default function Modal({ open, onClose, title, children, maxWidth = 1100 }: Props) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onClick={onClose}
-      className="modal-backdrop"
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="modal-dialog"
-        style={{ maxWidth }}
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent
+        style={{
+          maxWidth,
+          maxHeight: '90vh',
+          background: 'hsl(var(--background))',
+          border: '1px solid var(--border)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+        className="p-0 gap-0 overflow-hidden"
       >
-        <div className="modal-header">
-          <h2>{title}</h2>
-          <button className="btn" onClick={onClose} aria-label="Close">Close</button>
+        <DialogHeader className="px-6 py-4 border-b border-border flex-shrink-0">
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
+          {children}
         </div>
-        {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

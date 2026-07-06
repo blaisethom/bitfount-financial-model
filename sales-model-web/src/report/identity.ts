@@ -45,6 +45,17 @@ export const SOURCE_IDENTITY: Record<string, string[]> = {
   // Per-employee salary adjustments
   employee_adjustments_sparse_t: ['employee_id', 'month_idx'],
   employee_factors_t: ['employee_id', 'month_idx'],
+  // Weekly cashflow model
+  weeks_t: ['month_idx'],
+  actuals_t: ['row_id', 'month_idx'],
+  forecast_items_t: ['row_id', 'month_idx'],
+  capital_events_t: ['month_idx'],
+  cashflow_t: ['row_id', 'month_idx'],
+  closing_balance_t: ['row_id', 'month_idx'],
+  opening_balance_t: ['row_id', 'month_idx'],
+  inflows_t: ['row_id', 'month_idx'],
+  outflows_t: ['row_id', 'month_idx'],
+  bank_accounts_t: ['row_id', 'month_idx'],
 };
 
 export class IdentityResolver {
@@ -62,7 +73,7 @@ export class IdentityResolver {
 
   private compute(tableRef: string): string[] {
     if (SOURCE_IDENTITY[tableRef] !== undefined) return SOURCE_IDENTITY[tableRef];
-    const step = this.model.steps.find((s) => s.output === tableRef);
+    const step = this.model.steps.find((s) => s.id === tableRef);
     if (!step) return [];
     const inputId = this.for(step.input);
     switch (step.op.op) {

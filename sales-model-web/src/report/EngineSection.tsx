@@ -9,15 +9,16 @@
 //   - no-axis value-columns             : parameter/value vertical list
 //   - no-axis table-rows                : schema columns (roster style)
 
+import React, { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { useMemo } from 'react';
 import type { ColDef, CellClassParams } from 'ag-grid-community';
 import type { CellValue, EvalResult, ModelDef, Row, Table } from '../engine';
 import type {
-  CellFormat, ReportBlock, ReportDef, ReportSection, TableBlock,
+  CellFormat, ChartBlock, ReportBlock, ReportDef, ReportSection, TableBlock,
   TitleBlock, ParagraphBlock, RowsSpec,
 } from './types';
 import { IdentityResolver, SOURCE_IDENTITY } from './identity';
+import EngineChart from './EngineChart';
 
 export interface ReportEdit {
   source: string;
@@ -32,6 +33,8 @@ interface Props {
   model: ModelDef;
   sectionId: string;
   onEdit?: (edit: ReportEdit) => void;
+  /** Override renderer for chart blocks; receives the block ref and optional title. */
+  renderChart?: (ref: string, title?: string) => React.ReactNode;
 }
 
 
@@ -44,6 +47,8 @@ function dateLabels(evalResult: EvalResult, calendarRef?: string): string[] {
   return out;
 }
 
+const EDITABLE_BG = '#fefce8';
+
 function fmtValue(v: unknown, format: CellFormat): string {
   if (v == null || v === '') return '';
   const n = typeof v === 'number' ? v : Number(v);
@@ -51,6 +56,7 @@ function fmtValue(v: unknown, format: CellFormat): string {
   if (n === 0) return '';
   if (format === 'money') return '$' + Math.round(n).toLocaleString();
   if (format === 'count' || format === 'integer') return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  if (format === 'decimal') return n.toFixed(2);
   if (format === 'percent') return (n * 100).toFixed(2) + '%';
   return String(v);
 }
@@ -94,12 +100,22 @@ function uniqueAxisValues(rows: Row[], axisCol: string): Array<string | number> 
 function yearGroups(
   evalResult: EvalResult, report: ReportDef, axisValues: Array<string | number>,
 ): Array<{ year: number; indexes: number[] }> {
-  const dates = dateLabels(evalResult, report.calendarRef);
+  const calTable = report.calendarRef ? evalResult.tables[report.calendarRef] : undefined;
+  // Build idx → year map. Prefer an explicit `year` column (present on the
+  // cashflow weeks_t); fall back to parsing the first 4 chars of `date`
+  // (works for YYYY-MM and YYYY-MM-DD formats used by the financial model).
+  const yearByIdx = new Map<number, number>();
+  for (const r of calTable?.rows ?? []) {
+    const idx = Number(r.month_idx);
+    const y = r.year != null
+      ? Number(r.year)
+      : parseInt(String(r.date ?? '').slice(0, 4), 10);
+    if (!isNaN(y)) yearByIdx.set(idx, y);
+  }
   const groups = new Map<number, number[]>();
   axisValues.forEach((v, i) => {
-    const d = dates[Number(v)];
-    if (!d) return;
-    const y = parseInt(d.slice(0, 4), 10);
+    const y = yearByIdx.get(Number(v));
+    if (y === undefined || isNaN(y)) return;
     if (!groups.has(y)) groups.set(y, []);
     groups.get(y)!.push(i);
   });
@@ -107,7 +123,7 @@ function yearGroups(
     .sort(([a], [b]) => a - b).map(([year, indexes]) => ({ year, indexes }));
 }
 
-export default function EngineSection({ report, evalResult, model, sectionId, onEdit }: Props) {
+export default function EngineSection({ report, evalResult, model, sectionId, onEdit, renderChart }: Props) {
   const section = report.sections.find((s) => s.id === sectionId);
   const identity = useMemo(() => new IdentityResolver(model), [model]);
   if (!section) return <p className="hint">Unknown section: <code>{sectionId}</code></p>;
@@ -123,6 +139,7 @@ export default function EngineSection({ report, evalResult, model, sectionId, on
           model={model}
           identity={identity}
           onEdit={onEdit}
+          renderChart={renderChart}
         />
       ))}
     </div>
@@ -136,6 +153,7 @@ interface BlockProps {
   model: ModelDef;
   identity: IdentityResolver;
   onEdit?: (edit: ReportEdit) => void;
+  renderChart?: (ref: string, title?: string) => React.ReactNode;
 }
 
 function BlockRenderer(p: BlockProps) {
@@ -144,6 +162,7 @@ function BlockRenderer(p: BlockProps) {
     case 'paragraph': return <ParagraphRenderer block={p.block} />;
     case 'spacer':    return <div style={{ height: (p.block.rows ?? 1) * 12 }} />;
     case 'table':     return <TableRenderer {...p} block={p.block} />;
+    case 'chart':     return <ChartBlockRenderer block={p.block} evalResult={p.evalResult} model={p.model} renderChart={p.renderChart} />;
   }
 }
 
@@ -156,6 +175,14 @@ function TitleRenderer({ block }: { block: TitleBlock }) {
 
 function ParagraphRenderer({ block }: { block: ParagraphBlock }) {
   return <p className="hint" style={block.italic ? { fontStyle: 'italic' } : undefined}>{block.text}</p>;
+}
+
+function ChartBlockRenderer({ block, evalResult, model, renderChart }: { block: ChartBlock; evalResult: EvalResult; model: ModelDef; renderChart?: (ref: string, title?: string) => React.ReactNode }) {
+  if (renderChart) {
+    const custom = renderChart(block.ref, block.title);
+    if (custom != null) return <>{custom}</>;
+  }
+  return <EngineChart ref_={block.ref} evalResult={evalResult} model={model} title={block.title} />;
 }
 
 interface TableProps extends BlockProps {
@@ -319,6 +346,7 @@ const FORMATTER_BY_FMT: Record<CellFormat, (v: unknown) => string> = {
   money: (v) => fmtValue(v, 'money'),
   count: (v) => fmtValue(v, 'count'),
   integer: (v) => fmtValue(v, 'integer'),
+  decimal: (v) => fmtValue(v, 'decimal'),
   percent: (v) => fmtValue(v, 'percent'),
   text: (v) => fmtValue(v, 'text'),
 };
@@ -356,6 +384,7 @@ function buildPivotGrid(
       headerName: axisLabels[i],
       width: 84,
       editable: canonical,
+      cellStyle: canonical ? () => ({ background: EDITABLE_BG }) : undefined,
       valueFormatter: (p) => FORMATTER_BY_FMT[defaultFmt](p.value),
       valueParser: (p) => {
         const n = parseFloat(p.newValue);
@@ -621,6 +650,7 @@ function buildKeyValueGrid(
       headerName: 'Value',
       width: 160,
       editable: canonical,
+      cellStyle: canonical ? () => ({ background: EDITABLE_BG }) : undefined,
       valueFormatter: (p) => {
         const fmt = (p.data as { __fmt?: CellFormat })?.__fmt ?? defaultFmt;
         return FORMATTER_BY_FMT[fmt](p.value);
@@ -640,7 +670,7 @@ function buildRosterGrid(
   group: GroupProps['group'],
   source: Table,
   canonical: boolean,
-  _defaultFmt: CellFormat,
+  defaultFmt: CellFormat,
 ): GridSpec {
   if (block.rows.kind !== 'table-rows') return { rowData: [], columnDefs: [], height: 80 };
   const rowsSpec = block.rows;
@@ -660,8 +690,9 @@ function buildRosterGrid(
       headerName: c.name,
       width: 140,
       editable: canonical,
+      cellStyle: canonical ? () => ({ background: EDITABLE_BG }) : undefined,
       valueFormatter: c.type === 'number'
-        ? (p) => fmtValue(p.value, 'money')
+        ? (p) => fmtValue(p.value, rowsSpec.columnFormats?.[c.name] ?? defaultFmt)
         : undefined,
       valueParser: c.type === 'number'
         ? (p) => {

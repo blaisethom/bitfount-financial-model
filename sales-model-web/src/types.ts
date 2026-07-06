@@ -272,6 +272,14 @@ export interface Actuals {
   costDeptMonthly: Record<CostDept, Record<number, Partial<Record<CostDeptMetric, number>>>>;
   /** Monthly balance sheet overrides, keyed by month_idx. Yearly view picks end-of-year months. */
   bsMonthly: Record<number, Partial<Record<BsLine, number>>>;
+  /**
+   * Per-cost-line-item actuals from Xero, keyed by `"${dept}|${line_name}"`.
+   * Inner record: month_idx → actual value. When present for a (dept, line_name,
+   * month_idx), the engine uses this in place of the modeled cost_line_items_t row.
+   * line_name should match the Xero account name (or the user's model line name if
+   * they align them). Populated by buildActualsFromXero → flattenModelInput.
+   */
+  costLineMonthly: Record<string, Record<number, number>>;
 }
 
 export interface ModelInput {

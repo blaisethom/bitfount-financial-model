@@ -1,0 +1,215 @@
+# Engine section layout — controls how the Engine explorer organises its sidebar.
+#
+# groups:  collapsible sections in the "By section" view.  Each ref is either a
+#          source name or a step output name.  Order here = order in the sidebar.
+#
+# outputs: steps shown with ★ in the explorer node list — the model's headline
+#          KPI tables.  Order here = order in the starred list.
+
+groups:
+  - name: Calendar
+    description: Month index sequence and the derived YYYY-MM date string.
+    refs:
+      - month_indices
+      - dates_t
+
+  - name: Revenue Model
+    description: >
+      Per-TA × type × month active trials and revenue components, rolled up to
+      per-TA and modeled-total monthly. Modeller and sales commission derivations
+      live here too.
+    refs:
+      - pricing_t
+      - schedule_t
+      - commission_t
+      - active_by_ta_type_month_window
+      - active_by_ta_type_month
+      - active_with_pricing
+      - revenue_by_ta_type_month_raw
+      - revenue_by_ta_type_month
+      - ta_monthly_components
+      - ta_monthly_total
+      - modeled_total_monthly
+      - model_revenue_by_ta_type_month_raw
+      - model_revenue_by_ta_type_month
+      - model_revenue_by_ta_month
+      - modeller_commission_per_ta_with_params
+      - modeller_commission_per_ta_monthly
+      - modeller_commission_monthly
+      - starts_per_month
+      - starts_with_revenue
+      - starts_with_revenue_and_commission
+      - sales_commission_monthly
+
+  - name: HubSpot
+    description: HubSpot pipeline line items per month and rollup with the modeled total.
+    refs:
+      - hubspot_pipeline_t
+      - hubspot_per_ta_monthly
+      - ta_monthly_total_joined_hubspot
+      - ta_monthly_with_hubspot
+      - hubspot_total_monthly
+      - modeled_with_hubspot
+      - revenue_monthly
+
+  - name: Employees
+    description: >
+      Headcount roster, payroll assumptions, and the per-employee × month cost
+      build-up with inflation.
+    refs:
+      - employees_t
+      - employee_assumptions_t
+      - employees_cross_dates
+      - employees_with_params
+      - employees_with_date_parts
+      - per_employee_monthly_intermediate
+      - per_employee_monthly_cost
+      - employee_dept_monthly
+      - employee_total_monthly
+
+  - name: Costs
+    description: >
+      Non-staff cost line items, depreciation, and the per-cost-dept staff +
+      non-staff + derived-sales-commission rollup.
+    refs:
+      - cost_line_items_t
+      - depreciation_t
+      - dept_to_tab_t
+      - employee_dept_to_cost_dept
+      - cost_dept_staff_monthly
+      - cost_line_items_dept_monthly
+      - cost_dept_staff_and_line
+      - cost_dept_with_sales_commission
+      - cost_dept_total_monthly
+      - total_opex_monthly
+
+  - name: Budget P&L
+    description: >
+      Revenue → cost of sales → gross profit → opex → EBITDA, plus the
+      below-EBITDA layer: − depreciation → operating profit + R&D credit →
+      profit after tax. Monthly and yearly.
+    refs:
+      - rev_with_modeller_commission
+      - budget_with_cos_gp
+      - budget_with_opex
+      - budget_monthly
+      - rd_tax_credit_t
+      - interest_income_t
+      - budget_with_dep_join
+      - budget_with_dep_renamed
+      - budget_with_rd_credit_join
+      - budget_with_rd_credit_renamed
+      - budget_with_interest_join
+      - budget_monthly_full_pl
+      - budget_with_dates
+      - budget_with_year
+      - budget_yearly
+
+  - name: Balance Sheet
+    description: >
+      Opening balance sheet + per-month derivations: tangible assets (− cumulative
+      depreciation), trade debtors (revenue × AR days), trade creditors (cash opex
+      × AP days), loans (− cumulative repayments), retained earnings (BFWD +
+      cumulative profit-after-tax), and cash (opening + cumulative PaT +
+      depreciation add-back − capex − loan repayments − ΔWC).
+      All consolidated in bs_summary_monthly.
+    refs:
+      - opening_bs_t
+      - bs_assumptions_t
+      - cumulative_depreciation_monthly
+      - cumulative_ebitda_monthly
+      - cumulative_profit_after_tax_monthly
+      - tangible_assets_with_opening
+      - tangible_assets_monthly_full
+      - tangible_assets_monthly
+      - trade_debtors_with_assumptions
+      - trade_debtors_monthly_full
+      - trade_debtors_monthly
+      - non_staff_opex_monthly
+      - trade_creditors_with_modeller
+      - trade_creditors_with_assumptions
+      - trade_creditors_monthly_full
+      - trade_creditors_monthly
+      - loans_with_opening
+      - loans_with_assumptions
+      - loans_monthly_full
+      - loans_monthly
+      - cash_components_step1
+      - cash_components_step2
+      - cash_components_step3
+      - cash_components_step4
+      - cash_components_step5
+      - cash_components_step6
+      - cash_monthly_full
+      - cash_monthly
+      - retained_earnings_with_opening
+      - retained_earnings_monthly_full
+      - retained_earnings_monthly
+      - bs_summary_step1
+      - bs_summary_step2
+      - bs_summary_step3
+      - bs_summary_step4
+      - bs_summary_step5
+      - bs_summary_step6
+      - bs_summary_step7
+      - bs_summary_monthly
+
+outputs:
+  - ref: active_by_ta_type_month
+    label: Active trials per TA × type × month
+  - ref: revenue_by_ta_type_month
+    label: Per TA × type × month revenue components
+  - ref: ta_monthly_total
+    label: Per-TA per-month total revenue (modeled only)
+  - ref: hubspot_per_ta_monthly
+    label: Per-TA HubSpot pipeline per month
+  - ref: ta_monthly_with_hubspot
+    label: Per-TA per-month revenue (modeled + HubSpot)
+  - ref: modeled_total_monthly
+    label: Modeled revenue total per month
+  - ref: revenue_monthly
+    label: Monthly total revenue (modeled + HubSpot)
+  - ref: modeller_commission_per_ta_monthly
+    label: Modeller commission per TA × month
+  - ref: modeller_commission_monthly
+    label: Total modeller commission per month
+  - ref: sales_commission_monthly
+    label: Sales commission per month (S&M derived)
+  - ref: per_employee_monthly_cost
+    label: Per-employee monthly cost
+  - ref: cost_dept_staff_monthly
+    label: Cost dept staff cost per month
+  - ref: cost_dept_total_monthly
+    label: Cost dept total per month
+  - ref: total_opex_monthly
+    label: Total opex per month
+  - ref: budget_monthly
+    label: Monthly P&L (revenue → EBITDA)
+  - ref: budget_monthly_full_pl
+    label: Monthly P&L (with operating profit + PaT)
+  - ref: budget_yearly
+    label: Yearly P&L
+  - ref: tangible_assets_monthly
+    label: Tangible assets per month
+  - ref: trade_debtors_monthly
+    label: Trade debtors per month
+  - ref: trade_creditors_monthly
+    label: Trade creditors per month
+  - ref: cash_monthly
+    label: Cash per month
+  - ref: loans_monthly
+    label: Loans per month
+  - ref: retained_earnings_monthly
+    label: Retained earnings per month
+  - ref: bs_summary_monthly
+    label: Balance Sheet (monthly, all lines)
+  - ref: budget_monthly_with_actuals
+    label: Monthly P&L (with actuals overlay)
+  - ref: cost_dept_total_monthly_with_actuals
+    label: Per-dept monthly opex (with actuals overlay)
+  - ref: cost_dept_yearly
+    label: Per-dept yearly opex (derived)
+  - ref: bs_summary_monthly_with_actuals
+    label: Monthly Balance Sheet (with actuals overlay)
+  - ref: bs_yearly_with_actuals
+    label: Yearly Balance Sheet (end-of-year, derived)

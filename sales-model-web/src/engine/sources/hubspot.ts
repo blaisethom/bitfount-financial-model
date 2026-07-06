@@ -111,13 +111,17 @@ export const hubspotPipelineAdapter: SourceAdapter<HubSpotPipelineConfig> = {
       config.assumptions,
     );
 
-    // Wide → long: one row per (line_item, month_idx). Skip strict zeros so
-    // the table size stays comparable to the manual / flatten path.
+    // Wide → long: one row per (ta, line_item, month_idx). Use the per-TA
+    // breakdown so rows match the (ta, line_item, month_idx, value) schema and
+    // downstream steps that join/group by ta continue to work. Skip strict
+    // zeros to keep table size comparable to the flatten path.
     const rows: Row[] = [];
-    for (const [lineName, arr] of Object.entries(hubspot.lineItems)) {
-      arr.forEach((value, monthIdx) => {
-        rows.push({ line_item: lineName, month_idx: monthIdx, value });
-      });
+    for (const [ta, byLine] of Object.entries(hubspot.byTALineItems)) {
+      for (const [lineName, arr] of Object.entries(byLine)) {
+        arr.forEach((value, monthIdx) => {
+          if (value !== 0) rows.push({ ta, line_item: lineName, month_idx: monthIdx, value });
+        });
+      }
     }
     return { schema, rows };
   },

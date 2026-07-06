@@ -24,14 +24,14 @@ export function literal(opts: {
 
 export function apiSource(opts: {
   adapter: string;
-  config: unknown;
+  config?: unknown;
   schema: TableSchema;
   description?: string;
 }): SourceDef {
   return {
     kind: 'api',
     adapter: opts.adapter,
-    config: opts.config,
+    config: opts.config ?? null,
     schema: opts.schema,
     description: opts.description,
   };

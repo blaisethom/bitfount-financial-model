@@ -26,8 +26,12 @@ export function evaluateModel(model: ModelDef, opts: EvalOptions = {}): EvalResu
     } else if (src.kind === 'sequence') {
       const rows: Row[] = Array.from({ length: src.count }, (_, i) => ({ [src.column]: i }));
       tables[name] = { schema: src.schema, rows };
+    } else if (src.kind === 'api') {
+      // API sources without prefetched data start empty — they need to be synced
+      // via their registered adapter before evaluation can use real values.
+      tables[name] = { schema: src.schema, rows: [] };
     } else {
-      throw new Error(`Source "${name}" is kind "${src.kind}" — pass prefetched data via opts.prefetchedSources.`);
+      throw new Error(`Source "${name}" is kind "${(src as { kind: string }).kind}" — pass prefetched data via opts.prefetchedSources.`);
     }
   }
 
@@ -36,7 +40,7 @@ export function evaluateModel(model: ModelDef, opts: EvalOptions = {}): EvalResu
     const input = tables[step.input];
     if (!input) throw new Error(`Step "${step.id}": input table "${step.input}" not found.`);
     const output = applyOp(input, step.op, tables, step.id);
-    tables[step.output] = output;
+    tables[step.id] = output;
     trace.push({ step, output });
   }
 

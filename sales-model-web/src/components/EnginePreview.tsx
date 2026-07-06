@@ -4,7 +4,7 @@
 // formula display also exposes clickable column references that jump back to
 // the upstream source/step the column came from.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   evaluateModel,
   type AggExpr, type CellValue, type Column, type EvalResult, type Expr, type ModelDef, type ModelOutputDef,
@@ -16,6 +16,8 @@ import {
   type FormulaOverrides,
 } from '../formula';
 import Modal from './Modal';
+import YamlViewer from './YamlViewer';
+import { Button } from '@/components/ui/button';
 
 /** Wiring that makes a manual source's value cells editable. */
 interface EditConfig {
@@ -68,6 +70,10 @@ interface Props {
   identityFor?: (ref: string) => string[];
   /** When provided, map-step column formulas become editable. */
   formulaEdit?: FormulaEditConfig;
+  /** Called when the user clicks "Sync" on an api-typed source. Receives the
+   *  adapter name and source table name. The host triggers the appropriate
+   *  sync flow (HubSpot sync, Xero sync, etc.) and updates model state. */
+  onApiSync?: (adapterName: string, sourceName: string) => Promise<void>;
 }
 
 interface ExpandedTable {
@@ -97,7 +103,7 @@ function stepInputRefs(step: Step): string[] {
   return refs;
 }
 
-export default function EnginePreview({ model, result: passedResult, currentRef, onRefChange, onEdit, editableSources, identityFor, formulaEdit }: Props) {
+export default function EnginePreview({ model, result: passedResult, currentRef, onRefChange, onEdit, editableSources, identityFor, formulaEdit, onApiSync }: Props) {
   const result = useMemo(
     () => passedResult ?? evaluateModel(model),
     [model, passedResult],
@@ -113,7 +119,7 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
     for (const { step, output } of result.trace) {
       out.push({
         kind: 'step',
-        ref: step.output,
+        ref: step.id,
         step,
         output,
         input: result.tables[step.input],
@@ -162,7 +168,29 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
     if (onRefChange) onRefChange(node.ref);
     else setLocalIdx(i);
   };
+  const [engineViewTab, setEngineViewTab] = useState<'ui' | 'yaml'>('ui');
+  const [pendingScroll, setPendingScroll] = useState<string | null>(null);
+  const [yamlHighlight, setYamlHighlight] = useState<string | undefined>();
   const [expanded, setExpanded] = useState<ExpandedTable | null>(null);
+
+  // After switching to the YAML tab, find the anchor element and scroll to it.
+  useEffect(() => {
+    if (!pendingScroll || engineViewTab !== 'yaml') return;
+    const el = document.getElementById(`yaml-ref-${pendingScroll}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setYamlHighlight(pendingScroll);
+    }
+    setPendingScroll(null);
+  }, [pendingScroll, engineViewTab]);
+
+  const allRefs = useMemo(() => new Set(nodes.map((n) => n.ref)), [nodes]);
+
+  const jumpToYaml = (ref: string) => {
+    setEngineViewTab('yaml');
+    setPendingScroll(ref);
+    setYamlHighlight(undefined); // reset so animation re-triggers
+  };
   // List is hidden by default on phones; toolbar toggle controls it.
   const [showList, setShowList] = useState<boolean>(
     () => typeof window === 'undefined' || !window.matchMedia('(max-width: 900px)').matches,
@@ -182,9 +210,11 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
   const total = nodes.length;
   const current = nodes[currentIdx];
 
-  // When the current node is an editable manual source, build the edit wiring.
+  // Build edit wiring for manual and api sources that are in editableSources.
+  // literal and sequence sources are derived/generated and not user-editable.
   const editConfig = useMemo<EditConfig | undefined>(() => {
-    if (!current || current.kind !== 'source' || current.src.kind !== 'manual') return undefined;
+    if (!current || current.kind !== 'source') return undefined;
+    if (current.src.kind !== 'manual' && current.src.kind !== 'api') return undefined;
     if (!onEdit || !editableSources?.has(current.ref)) return undefined;
     return { source: current.ref, idKeys: identityFor?.(current.ref) ?? [], onEdit };
   }, [current, onEdit, editableSources, identityFor]);
@@ -254,9 +284,26 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
           Declarative engine. The model is a DAG of named tables; sources and steps share one navigable list.
           Click any column reference in a step's formula to jump to where it came from.
         </p>
+        <div className="engine-view-tabs">
+          {(['ui', 'yaml'] as const).map((tab) => (
+            <button
+              key={tab}
+              className={`engine-view-tab-btn${engineViewTab === tab ? ' is-active' : ''}`}
+              onClick={() => setEngineViewTab(tab)}
+            >
+              {tab === 'ui' ? 'Explorer' : 'YAML'}
+            </button>
+          ))}
+        </div>
       </section>
 
-      <section>
+      {engineViewTab === 'yaml' && (
+        <section>
+          <YamlViewer data={model} anchorRefs={allRefs} highlightRef={yamlHighlight} />
+        </section>
+      )}
+
+      {engineViewTab === 'ui' && <section>
         <h2>Definitions</h2>
 
         <div className="engine-step-toolbar">
@@ -274,31 +321,34 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
             )}
           </div>
           <div className="engine-step-nav">
-            <button className="btn" onClick={() => goToIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0}>
+            <Button variant="outline" size="sm" onClick={() => goToIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0}>
               ← Prev
-            </button>
-            <button
-              className="btn"
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => goToIdx(Math.min(total - 1, currentIdx + 1))}
               disabled={currentIdx >= total - 1}
             >
               Next →
-            </button>
-            <button
-              className="btn"
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setShowList((s) => !s)}
               aria-expanded={showList}
             >
               {showList ? 'Hide list' : 'Browse all'}
-            </button>
+            </Button>
             {model.groups && model.groups.length > 0 && (
-              <button
-                className="btn"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setGroupBySection((g) => !g)}
                 title="Toggle section grouping"
               >
                 {groupBySection ? 'Flat' : 'By section'}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -325,6 +375,8 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
                     axis={model.defaultAxis}
                     onExpand={openFull}
                     edit={editConfig}
+                    onJumpToYaml={jumpToYaml}
+                    onApiSync={onApiSync}
                   />
                 : <StepDetail
                     step={current.step}
@@ -342,11 +394,12 @@ export default function EnginePreview({ model, result: passedResult, currentRef,
                     onJumpToTraceIdx={(i) => goToIdx(traceIdxToNodeIdx(i))}
                     onExpand={openFull}
                     formulaEdit={formulaEdit}
+                    onJumpToYaml={jumpToYaml}
                   />
             )}
           </div>
         </div>
-      </section>
+      </section>}
 
       <Modal
         open={expanded !== null}
@@ -451,16 +504,65 @@ interface SourceDetailProps {
   axis?: string;
   onExpand: (title: string, table: Table, pivot?: boolean) => void;
   edit?: EditConfig;
+  onJumpToYaml?: (ref: string) => void;
+  onApiSync?: (adapterName: string, sourceName: string) => Promise<void>;
 }
 
-function SourceDetail({ name, src, table, usages, trace, onJumpToTraceIdx, dateMap, axis, onExpand, edit }: SourceDetailProps) {
+function SourceDetail({ name, src, table, usages, trace, onJumpToTraceIdx, dateMap, axis, onExpand, edit, onJumpToYaml, onApiSync }: SourceDetailProps) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const handleSync = async () => {
+    if (src.kind !== 'api' || !onApiSync) return;
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      await onApiSync(src.adapter, name);
+      setSyncMsg('Synced');
+      setTimeout(() => setSyncMsg(null), 4000);
+    } catch (err) {
+      setSyncMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="engine-step-detail">
       <h3 className="engine-step-detail-title">
         {name}
         <span className="engine-kind-badge headline-inline">{src.kind}</span>
-        {edit && <span className="engine-editable-badge" title="Manual input — cells are editable">editable</span>}
+        {src.kind === 'api' && (
+          <span className="engine-kind-badge headline-inline" style={{ background: '#dbeafe', color: '#1e40af' }}>
+            {src.adapter}
+          </span>
+        )}
+        {edit && (
+          <span className="engine-editable-badge" title={src.kind === 'api' ? 'API-synced — cells are editable as overrides' : 'Manual input — cells are editable'}>
+            editable
+          </span>
+        )}
+        {onJumpToYaml && (
+          <button type="button" className="engine-yaml-link" onClick={() => onJumpToYaml(name)} title="View definition in YAML">
+            YAML ↗
+          </button>
+        )}
       </h3>
+      {src.kind === 'api' && onApiSync && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
+            {syncing ? 'Syncing…' : `Sync from ${src.adapter}`}
+          </Button>
+          {syncMsg && (
+            <span className="hint" style={{ color: syncMsg.startsWith('Failed') ? '#dc2626' : '#15803d' }}>
+              {syncMsg}
+            </span>
+          )}
+          {(!table || table.rows.length === 0) && (
+            <span className="hint">(no data — sync to populate)</span>
+          )}
+        </div>
+      )}
       {'description' in src && src.description && (
         <p className="engine-step-detail-desc">{src.description}</p>
       )}
@@ -477,7 +579,13 @@ function SourceDetail({ name, src, table, usages, trace, onJumpToTraceIdx, dateM
       </ul>
 
       <div className="engine-section-label">Data <code className="engine-ref">{name}</code></div>
-      {edit && <p className="hint" style={{ marginTop: -4 }}>Click any value cell to edit. Changes save into the active scenario.</p>}
+      {edit && (
+        <p className="hint" style={{ marginTop: -4 }}>
+          {src.kind === 'api'
+            ? 'Click any value cell to override the synced value. Edits persist in the active scenario; syncing again will overwrite them.'
+            : 'Click any value cell to edit. Changes save into the active scenario.'}
+        </p>
+      )}
       {table
         ? <SourceTablePreview table={table} dateMap={dateMap} axis={axis} scrollable edit={edit} onExpand={() => onExpand(name, table, true)} />
         : <p className="hint">(table not yet materialized)</p>}
@@ -517,7 +625,7 @@ function UsageList({ usages, trace, onJump }: UsageListProps) {
                 title={`Jump to step: ${s.name}`}
               >
                 <span className="engine-usage-name">{s.name}</span>
-                <code className="engine-ref engine-usage-ref">{s.output}</code>
+                <code className="engine-ref engine-usage-ref">{s.id}</code>
               </button>
             </li>
           );
@@ -544,11 +652,12 @@ interface StepDetailProps {
   onJumpToTraceIdx: (traceIdx: number) => void;
   onExpand: (title: string, table: Table, pivot?: boolean) => void;
   formulaEdit?: FormulaEditConfig;
+  onJumpToYaml?: (ref: string) => void;
 }
 
 function StepDetail({
   step, input, inputRef, output, headline, inputRefs, resolveTable,
-  usages, trace, dateMap, axis, onJumpToRef, onJumpToTraceIdx, onExpand, formulaEdit,
+  usages, trace, dateMap, axis, onJumpToRef, onJumpToTraceIdx, onExpand, formulaEdit, onJumpToYaml,
 }: StepDetailProps) {
   // Valid column names in the primary input — column references in the
   // formula that match these are clickable and jump to the input ref.
@@ -568,7 +677,12 @@ function StepDetail({
         {headline && <span className="engine-headline-badge headline-inline" title="Declared headline output">★ headline</span>}
       </h3>
       <div className="engine-step-detail-varname">
-        <code className="engine-ref">{step.output}</code>
+        <code className="engine-ref">{step.id}</code>
+        {onJumpToYaml && (
+          <button type="button" className="engine-yaml-link" onClick={() => onJumpToYaml(step.id)} title="View definition in YAML">
+            YAML ↗
+          </button>
+        )}
       </div>
       <p className="engine-step-detail-desc">{step.description}</p>
       {headline && headline.description && (
@@ -585,16 +699,16 @@ function StepDetail({
         onTableClick={onJumpToRef}
         inputColumns={inputColumns}
         formulaEdit={formulaEdit}
-        stepOutput={step.output}
+        stepOutput={step.id}
       />
 
-      <div className="engine-section-label">Output <code className="engine-ref">{step.output}</code></div>
+      <div className="engine-section-label">Output <code className="engine-ref">{step.id}</code></div>
       <SourceTablePreview
         table={output}
         dateMap={dateMap}
         axis={axis}
         scrollable
-        onExpand={() => onExpand(step.output, output, true)}
+        onExpand={() => onExpand(step.id, output, true)}
       />
 
       <details className="engine-input-collapse" open>
@@ -858,7 +972,7 @@ function InlineFormulaEditor({ slot, inputColumns, onSave, onCancel }: {
       />
       {err && <div className="engine-formula-err">{err}</div>}
       <div className="engine-formula-actions">
-        <button className="btn" onClick={save}>Save{isExprLike ? ' (⌘↵)' : ' (↵)'}</button>
+        <Button variant="outline" size="sm" onClick={save}>Save{isExprLike ? ' (⌘↵)' : ' (↵)'}</Button>
         <button className="scenario-link" onClick={onCancel}>Cancel</button>
       </div>
       <div className="hint engine-formula-cols">
@@ -1275,6 +1389,30 @@ interface SourceTablePreviewProps {
  * row per metric.
  */
 function SourceTablePreview({ table, maxRows = 5, onExpand, dateMap, axis, scrollable, edit }: SourceTablePreviewProps) {
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [keyLefts, setKeyLefts] = useState<number[]>([]);
+
+  // After each render, measure actual th widths for sticky key columns so they
+  // don't all stack at left:0. useLayoutEffect is synchronous before paint.
+  useLayoutEffect(() => {
+    const tbl = tableRef.current;
+    if (!tbl) return;
+    const headerRow = tbl.querySelector('thead tr');
+    if (!headerRow) return;
+    const ths = Array.from(headerRow.querySelectorAll<HTMLElement>('th'));
+    const lefts: number[] = [];
+    let left = 0;
+    for (const th of ths) {
+      if (th.classList.contains('engine-pivot-key')) {
+        lefts.push(left);
+      }
+      left += th.offsetWidth;
+    }
+    setKeyLefts((prev) =>
+      prev.length === lefts.length && prev.every((v, i) => v === lefts[i]) ? prev : lefts,
+    );
+  }, [table, axis]);
+
   if (!table) return <span className="hint">(table not yet materialized)</span>;
   const pivot = axis ? detectPivot(table, axis) : null;
   if (!pivot || !axis) return <TablePreview table={table} maxRows={maxRows} onExpand={onExpand} scrollable={scrollable} edit={edit} />;
@@ -1346,16 +1484,16 @@ function SourceTablePreview({ table, maxRows = 5, onExpand, dateMap, axis, scrol
         </span>
       </div>
       <div className={`engine-table-scroll${scrollable ? ' engine-table-scroll--bounded' : ''}`}>
-        <table className="yearly-emp-table engine-pivot-table" style={{ fontSize: 12 }}>
+        <table ref={tableRef} className="yearly-emp-table engine-pivot-table" style={{ fontSize: 12 }}>
           <thead>
             <tr>
-              {keyCols.map((c) => (
-                <th key={c.name} className="engine-pivot-key" title={`${c.type}${c.description ? ' — ' + c.description : ''}`}>
+              {keyCols.map((c, ki) => (
+                <th key={c.name} className="engine-pivot-key" style={{ left: keyLefts[ki] ?? 0 }} title={`${c.type}${c.description ? ' — ' + c.description : ''}`}>
                   {c.name}
                 </th>
               ))}
               {showMetricCol && (
-                <th className="engine-pivot-key engine-pivot-metric-col" title="value column name">metric</th>
+                <th className="engine-pivot-key engine-pivot-metric-col" style={{ left: keyLefts[keyCols.length] ?? 0 }} title="value column name">metric</th>
               )}
               {axisValues.map((v) => (
                 <th key={v} className="engine-pivot-month" title={`${axis} = ${v}`}>
@@ -1368,12 +1506,12 @@ function SourceTablePreview({ table, maxRows = 5, onExpand, dateMap, axis, scrol
             {shown.map((r, i) => (
               <tr key={i}>
                 {r.keyValues.map((v, j) => (
-                  <td key={keyCols[j].name} className="engine-pivot-key" style={{ textAlign: 'left' }}>
+                  <td key={keyCols[j].name} className="engine-pivot-key" style={{ textAlign: 'left', left: keyLefts[j] ?? 0 }}>
                     {formatCell(v, keyCols[j].type)}
                   </td>
                 ))}
                 {showMetricCol && (
-                  <td className="engine-pivot-key engine-pivot-metric-col" style={{ textAlign: 'left' }}>
+                  <td className="engine-pivot-key engine-pivot-metric-col" style={{ textAlign: 'left', left: keyLefts[keyCols.length] ?? 0 }}>
                     <code className="engine-ref" style={{ marginLeft: 0 }}>{r.metric}</code>
                   </td>
                 )}

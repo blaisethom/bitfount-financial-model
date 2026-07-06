@@ -138,7 +138,6 @@ export interface Step {
   description: string;
   input: TableRef;
   op: TableOp;
-  output: TableRef;
 }
 
 // ─── Outputs ─────────────────────────────────────────────────────────────

@@ -106,11 +106,15 @@ const TA_NAMES = [
   'TA6', 'TA7', 'TA8', 'TA9', 'TA10', 'TA11', 'TA12',
 ];
 
-// Capital depreciation per month (72 values, Jan-2026 → Dec-2031), lifted from
-// v4-model.xlsx "Capital Purchases"!row155. Drives Tangible Assets writedown and
-// the below-EBITDA depreciation expense. Replaces the stale costs_data.json
-// series (the xlsx extract never touched the Capital Purchases sheet).
-const V4_DEPRECIATION_MONTHLY: number[] = [2373.9050, 2873.9050, 3373.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 5123.9050, 5540.5717, 5957.2383, 11373.9050, 11790.5717, 12623.9050, 13040.5717, 13040.5717, 13457.2383, 13873.9050, 13873.9050, 13873.9050, 12333.3333, 12250.0000, 12166.6667, 12500.0000, 12916.6667, 13333.3333, 13750.0000, 14166.6667, 14583.3333, 19583.3333, 22500.0000, 22500.0000, 26666.6667, 28333.3333, 32500.0000, 28333.3333, 28416.6667, 28083.3333, 28166.6667, 28666.6667, 28250.0000, 27833.3333, 27833.3333, 27833.3333, 27000.0000, 26583.3333, 26166.6667, 25333.3333, 26166.6667, 26166.6667, 26166.6667, 31166.6667, 31166.6667, 27000.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000];
+// Combined depreciation per month (72 values, Jan-2026 → Dec-2031), booked
+// below EBITDA (operating_profit = ebitda − depreciation + interest_income).
+// v4 splits this across two Budgets rows: "Computer" COS (row23, above EBITDA)
+// and tangible-asset depreciation (row49, below EBITDA, only Jan-Mar 2026).
+// We merge both here so profit_after_tax reconciles with v4 exactly.
+// Jan 2026: 337.92 (Computer COS) + 2772.00 (actual tangible-asset depreciation) = 3109.92
+// Feb 2026: 0 + 2327.16 = 2327.16; Mar 2026: 0 + 2615.60 = 2615.60 (row49 Budgets actuals)
+// Apr 2026 onwards: only Computer COS = 3873.905/month (from Capital Purchases sheet).
+const V4_DEPRECIATION_MONTHLY: number[] = [3109.9200, 2327.1600, 2615.6000, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 3873.9050, 5123.9050, 5540.5717, 5957.2383, 11373.9050, 11790.5717, 12623.9050, 13040.5717, 13040.5717, 13457.2383, 13873.9050, 13873.9050, 13873.9050, 12333.3333, 12250.0000, 12166.6667, 12500.0000, 12916.6667, 13333.3333, 13750.0000, 14166.6667, 14583.3333, 19583.3333, 22500.0000, 22500.0000, 26666.6667, 28333.3333, 32500.0000, 28333.3333, 28416.6667, 28083.3333, 28166.6667, 28666.6667, 28250.0000, 27833.3333, 27833.3333, 27833.3333, 27000.0000, 26583.3333, 26166.6667, 25333.3333, 26166.6667, 26166.6667, 26166.6667, 31166.6667, 31166.6667, 27000.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000, 24500.0000];
 
 export function loadInitialInput(): ModelInput {
   const dates = raw.dates as string[];
@@ -131,11 +135,23 @@ export function loadInitialInput(): ModelInput {
   // The first call to `syncHubSpot` overwrites this with a freshly-bucketed
   // version computed from the rule set.
   const hsLineItems = { ...(hsRaw.lineItems as Record<string, number[]>) };
+  // Seed byTALineItems for every modeled TA so hubspot_pipeline_t shows all TAs
+  // even before a sync. Ophthalmology gets the actual extracted values; all other
+  // TAs start at zero (overwritten on the first syncHubSpot call via the
+  // taAllocation rule set). Zero arrays are still emitted as rows by flattenModelInput
+  // so TAs remain visible in the engine explorer.
+  const hsZeroLine = Object.fromEntries(
+    Object.keys(hsLineItems).map((k) => [k, new Array(dates.length).fill(0)]),
+  );
+  const byTALineItems: Record<string, Record<string, number[]>> = {};
+  for (const ta of TA_NAMES) {
+    byTALineItems[ta] = ta === 'Ophthalmology'
+      ? Object.fromEntries(Object.entries(hsLineItems).map(([k, v]) => [k, [...v]]))
+      : Object.fromEntries(Object.entries(hsZeroLine).map(([k, v]) => [k, [...v]]));
+  }
   const hubspot: HubSpotData = {
     lineItems: hsLineItems,
-    byTALineItems: { Ophthalmology: Object.fromEntries(
-      Object.entries(hsLineItems).map(([k, v]) => [k, [...v]]),
-    ) },
+    byTALineItems,
     grandTotal: [...(hsRaw.grandTotal as number[])],
   };
   const employees: Employee[] = (empRaw.employees as Omit<Employee, 'id'>[]).map((e, i) => ({
@@ -430,6 +446,7 @@ export function loadInitialInput(): ModelInput {
       'Product Support': {},
     },
     bsMonthly: {},
+    costLineMonthly: {},
   };
 
   return {

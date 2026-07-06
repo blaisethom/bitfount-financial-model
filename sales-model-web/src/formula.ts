@@ -340,14 +340,14 @@ export function applyFormulaOverrides(
 ): ModelDef {
   if (!overrides || Object.keys(overrides).length === 0) return model;
   const steps: Step[] = model.steps.map((step) => {
-    const stepOv = overrides[step.output];
+    const stepOv = overrides[step.id];
     if (!stepOv || Object.keys(stepOv).length === 0) return step;
     const next: Step = { ...step, op: structuredClone(step.op) };
     for (const [slot, src] of Object.entries(stepOv)) {
       try {
         applySlot(next, slot, src);
       } catch (e) {
-        if (opts.strict) throw new Error(`${step.output} · ${slot.replace(/^\$/, '')}: ${e instanceof Error ? e.message : String(e)}`);
+        if (opts.strict) throw new Error(`${step.id} · ${slot.replace(/^\$/, '')}: ${e instanceof Error ? e.message : String(e)}`);
         // lenient: leave the original definition in place
       }
     }

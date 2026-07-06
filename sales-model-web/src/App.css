@@ -1,3 +1,5 @@
+@reference "tailwindcss";
+
 :root {
   --bg: #fafafa;
   --card: #fff;
@@ -8,365 +10,34 @@
   --accent-light: #dbeafe;
 }
 
-* {
-  box-sizing: border-box;
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply m-0 p-0 bg-gray-50 text-gray-900 text-[14px];
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  section {
+    @apply bg-white border border-gray-200 rounded-lg p-4 mb-4;
+  }
+
+  section h2 {
+    @apply m-0 mb-1 text-[16px];
+  }
+
+  section h3 {
+    @apply mt-4 mb-1.5 text-[14px] text-gray-900;
+  }
 }
 
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
-}
-
-.app {
-  max-width: 1700px;
-  margin: 0 auto;
-  padding: 16px 24px 64px;
-}
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.header-stats {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.stat {
-  text-align: right;
-}
-
-.stat-label {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.stat-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--accent);
-  line-height: 1.1;
-}
-
-.stat-sub {
-  color: var(--muted);
-  font-size: 11px;
-  margin-top: 1px;
-}
-
-.btn {
-  padding: 8px 14px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.btn:hover:not(:disabled) {
-  background: #f5f5f5;
-}
-
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.undo-group {
-  display: flex;
-  gap: 2px;
-}
-
-.icon-btn {
-  width: 32px;
-  padding: 6px 0;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.menu-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.menu-status {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.menu-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  min-width: 200px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
-  padding: 4px;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-}
-
-.menu-item {
-  background: transparent;
-  border: 0;
-  border-radius: 4px;
-  padding: 8px 10px;
-  text-align: left;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--text);
-}
-
-.menu-item:hover {
-  background: #f5f5f5;
-}
-
-section {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-section h2 {
-  margin: 0 0 4px;
-  font-size: 16px;
-}
-
-section h3 {
-  margin: 16px 0 6px;
-  font-size: 14px;
-  color: var(--text);
-}
-
-.hint {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.ta-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.tab {
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tab:hover {
-  border-color: var(--accent);
-}
-
-.tab.active {
-  background: var(--accent-light);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.tab.empty {
-  color: #9ca3af;
-}
-
-.view-tabs {
-  display: flex;
-  gap: 4px;
-  margin: 8px 0 0;
-  padding: 0 4px;
-  border-bottom: 1px solid var(--border);
-  align-items: flex-end;
-}
-
-.view-tab {
-  padding: 10px 18px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-bottom: 0;
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--muted);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  position: relative;
-  bottom: -1px;
-}
-
-.view-tab:hover {
-  color: var(--text);
-}
-
-.view-tab.active {
-  background: #fff;
-  color: var(--accent);
-  border-color: var(--border);
-  z-index: 1;
-}
-
-.view-tab-sub {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--muted);
-}
-
-.view-tab.active .view-tab-sub {
-  color: var(--muted);
-}
-
-.tab-total {
-  font-size: 11px;
-  color: var(--muted);
-  font-weight: 400;
-}
-
-.tab.active .tab-total {
-  color: var(--accent);
-}
-
-.ta-content {
-  margin-top: 8px;
-}
-
-.ta-summary {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 8px 0;
-}
-
-.ta-name {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.ta-total {
-  font-size: 14px;
-  color: var(--muted);
-}
-
-.app-footer {
-  margin-top: 24px;
-  padding: 12px;
-  background: #fffbea;
-  border: 1px solid #fde68a;
-  border-radius: 6px;
-  color: #78350f;
-  font-size: 12px;
-}
-
-.app-footer code {
-  background: rgba(0, 0, 0, 0.05);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
-.employee-assumptions,
-.commission-grid {
-  max-width: 480px;
-}
-
-/* Wrap data tables to scroll horizontally when the viewport is narrower than
-   the table's natural width. Without this, narrow mobile screens squash 6-yr
-   summary tables into unreadable column widths. */
-.scroll-x {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  max-width: 100%;
-}
-
-.yearly-emp-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.scroll-x > .yearly-emp-table {
-  /* Inside a scroll wrapper let columns size to content rather than squashing. */
-  width: auto;
-  min-width: 100%;
-}
-
-.scroll-x > .yearly-emp-table th,
-.scroll-x > .yearly-emp-table td {
-  white-space: nowrap;
-}
-
-.yearly-emp-table th,
-.yearly-emp-table td {
-  text-align: right;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.yearly-emp-table th:first-child,
-.yearly-emp-table td:first-child {
-  text-align: left;
-  font-weight: 500;
-}
-
-.yearly-emp-table thead th {
-  background: #f5f5f5;
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.yearly-emp-table .total-row td {
-  background: #eef;
-  font-weight: 700;
-}
-
-.yearly-emp-table .subtotal-row td {
-  background: #f5f5f5;
-  font-weight: 600;
-}
-
-.yearly-emp-table td.neg {
-  color: #b91c1c;
-}
-
-.yearly-emp-table td.bold {
-  font-weight: 600;
-}
+/* ─── AG-Grid (keep exactly as-is) ───────────────────────────────────────── */
 
 .ag-theme-quartz {
   --ag-font-size: 12px;
@@ -375,6 +46,15 @@ section h3 {
   --ag-header-height: 32px;
   --ag-tooltip-background-color: #1f2937;
 }
+
+/* The grid wraps our component in its own tooltip container; let our component own the styling. */
+.ag-tooltip {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+}
+
+/* ─── Formula tooltip (keep exactly as-is) ───────────────────────────────── */
 
 .formula-tooltip {
   background: #1f2937;
@@ -409,680 +89,1163 @@ section h3 {
   white-space: pre;
 }
 
-/* The grid wraps our component in its own tooltip container; let our component own the styling. */
-.ag-tooltip {
-  background: transparent !important;
-  border: 0 !important;
-  padding: 0 !important;
-}
+/* ─── Components ──────────────────────────────────────────────────────────── */
 
-/* ─── Modal ───────────────────────────────────────────────────────────── */
+@layer components {
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
+  /* ── App shell ── */
 
-.modal-dialog {
-  background: #fff;
-  border-radius: 8px;
-  width: 100%;
-  max-height: 90vh;
-  overflow: auto;
-  padding: 16px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  gap: 12px;
-}
-
-.modal-header h2 {
-  margin: 0;
-  font-size: 16px;
-}
-
-/* ─── EnginePreview ───────────────────────────────────────────────────── */
-
-/* Step explorer body — single column by default, sidebar + content when the
-   step list is open on a wide-enough viewport. `minmax(0, 1fr)` is critical:
-   without it the grid's implicit `min-width: auto` lets wide tables / JSON
-   dumps push the whole layout past the viewport. */
-.engine-step-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-}
-
-.engine-step-body.has-list {
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
-}
-
-.engine-step-body > * {
-  min-width: 0;
-}
-
-/* Compact toolbar above the step body — current-step indicator on one side,
-   prev/next/browse-all on the other. Stacks vertically on phones. */
-.engine-step-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
-  background: #f9fafb;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-.engine-step-toolbar-current {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.engine-step-counter {
-  font-size: 11px;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.engine-step-toolbar-io {
-  margin: 0;
-  font-size: 11px;
-  word-break: break-word;
-}
-
-.engine-step-nav {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.engine-sources-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-}
-
-.engine-sources-list > * {
-  min-width: 0;
-}
-
-.engine-source-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
-}
-
-.engine-step-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-/* Compact single-line list buttons. Each row is just the index + variable
-   name + small badges — no description preview, so the full list fits in a
-   scrollable sidebar. Title attribute carries the human-readable step name. */
-.engine-step-list-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-  padding: 4px 8px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: #fff;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 12px;
-  overflow: hidden;
-}
-
-.engine-step-list-btn:hover {
-  background: #f5f5f5;
-}
-
-.engine-step-list-btn.is-active {
-  background: var(--accent-light);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.engine-step-list-index {
-  color: var(--muted);
-  font-size: 10px;
-  flex-shrink: 0;
-  min-width: 22px;
-  text-align: right;
-}
-
-.engine-step-list-ref {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.engine-kind-badge--compact {
-  font-size: 8px;
-  padding: 0 4px;
-  margin-left: 0;
-  flex-shrink: 0;
-}
-
-/* Scrollable wrapper around the list — bounded by viewport height and sticky
-   so it stays visible while the detail panel scrolls. */
-.engine-list-scroll {
-  position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 24px);
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #fff;
-  scrollbar-width: thin;
-}
-
-@media (max-width: 900px) {
-  /* On phones/tablets the list is below the detail (no sidebar). Cap its
-     height so it doesn't push the whole detail off-screen. */
-  .engine-list-scroll {
-    position: static;
-    max-height: 50vh;
-  }
-}
-
-.engine-step-detail {
-  min-width: 0;
-}
-
-.engine-step-detail-title {
-  margin: 0 0 4px;
-}
-
-.engine-step-detail-desc {
-  margin: 0 0 8px;
-  font-size: 13px;
-}
-
-/* Variable-name line directly under the detail-panel header. */
-.engine-step-detail-varname {
-  margin: 0 0 6px;
-}
-
-.engine-step-detail-varname > .engine-ref {
-  font-size: 12px;
-  background: #eef2ff;
-  color: #4338ca;
-}
-
-/* The toolbar's current-item label switches to monospace because it shows the
-   variable-name ref (the human "step.name" is the smaller subtitle below). */
-.engine-step-toolbar-ref {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  word-break: break-word;
-}
-
-.engine-section-label {
-  margin: 12px 0 4px;
-  font-weight: 600;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.engine-ref {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  background: #f3f4f6;
-  padding: 1px 5px;
-  border-radius: 3px;
-  margin-left: 4px;
-  color: var(--text);
-}
-
-/* Pretty-printed operation body — code-style, wraps long lines, scrolls if
-   really wide. */
-.engine-formula {
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 10px;
-  font-size: 12px;
-}
-
-.engine-formula-head {
-  font-weight: 600;
-  color: var(--accent);
-  margin-bottom: 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-}
-
-.engine-formula-body {
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-/* Input table is collapsed by default — output is the headline. */
-.engine-input-collapse {
-  margin-top: 12px;
-  border-top: 1px dashed var(--border);
-  padding-top: 8px;
-}
-
-.engine-input-collapse > summary {
-  cursor: pointer;
-  list-style: revert;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.engine-input-collapse > summary > .engine-section-label {
-  display: inline;
-  margin: 0;
-}
-
-.engine-input-collapse[open] > summary {
-  margin-bottom: 6px;
-}
-
-/* "Headline output" badge — marks steps whose output is declared in
-   model.outputs (the curated list renderers consume). */
-.engine-headline-badge {
-  display: inline-block;
-  color: #b45309;
-  font-size: 10px;
-  margin-left: 6px;
-  vertical-align: baseline;
-}
-
-.engine-headline-badge.headline-inline,
-.engine-kind-badge.headline-inline {
-  background: #fffbea;
-  border: 1px solid #fde68a;
-  border-radius: 10px;
-  padding: 1px 8px;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-/* Source-kind badge ("literal" / "manual" / "api" / "sequence") next to a
-   source name in the node list. */
-.engine-kind-badge {
-  display: inline-block;
-  background: #eef2ff;
-  color: #4338ca;
-  border: 1px solid #c7d2fe;
-  border-radius: 10px;
-  padding: 0 6px;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  margin-left: 6px;
-  vertical-align: 1px;
-}
-
-/* Section-grouped node list. Each group is a <details> that can collapse. */
-.engine-grouped-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.engine-group {
-  border-bottom: 1px solid var(--border);
-  background: #fafafa;
-}
-
-.engine-group:last-child {
-  border-bottom: 0;
-}
-
-.engine-group[open] {
-  background: #fff;
-}
-
-.engine-group-summary {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-  font-weight: 600;
-  font-size: 11px;
-  color: var(--text);
-  background: #f3f4f6;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-
-.engine-group-name {
-  flex: 1;
-}
-
-.engine-group-count {
-  font-weight: 400;
-  font-size: 11px;
-  color: var(--muted);
-  background: #f3f4f6;
-  border-radius: 10px;
-  padding: 1px 8px;
-}
-
-.engine-group-desc {
-  margin: 0;
-  padding: 4px 8px 6px;
-  font-size: 11px;
-  background: #fafafa;
-}
-
-.engine-grouped-list {
-  display: block;
-  gap: 0;
-}
-
-/* Schema list on the source detail panel. */
-.engine-schema-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 8px;
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* Inline button style for refs — used by Input header and column references. */
-.engine-ref-button {
-  cursor: pointer;
-  border: 1px solid transparent;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.engine-ref-button:hover {
-  background: var(--accent-light);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* Multi-input collapse — each input (primary, plus join.right / union members)
-   gets its own row with a clickable ref and a small preview underneath. */
-.engine-inputs-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.engine-input-item {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px;
-  background: #fafafa;
-}
-
-.engine-input-item-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-/* Per-input collapse: summary shows the ref + meta on one row, table preview
-   lives inside the body and is hidden until the user opens the details. */
-.engine-input-item-summary {
-  cursor: pointer;
-  list-style: revert;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.engine-input-item-details[open] > .engine-input-item-summary {
-  margin-bottom: 6px;
-}
-
-.engine-input-item-meta {
-  margin-left: auto;
-  font-size: 10px;
-}
-
-/* Above each pivoted table — tells the reader which column was spread across
-   the x-axis and which numeric column(s) populate the cells. */
-.engine-pivot-axes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 4px 0 6px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.engine-pivot-axes-label {
-  font-weight: 600;
-}
-
-.engine-pivot-axes-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  background: #f3f4f6;
-  padding: 1px 5px;
-  border-radius: 3px;
-  color: var(--text);
-}
-
-/* "Used by" downstream-step list. */
-.engine-usage-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.engine-usage-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  text-align: left;
-  padding: 6px 10px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.engine-usage-btn:hover {
-  border-color: var(--accent);
-  background: var(--accent-light);
-}
-
-.engine-usage-name {
-  font-weight: 500;
-  flex: 1;
-  min-width: 0;
-}
-
-.engine-usage-ref {
-  flex-shrink: 0;
-}
-
-/* Column reference button inside the formula display. */
-.engine-col-ref {
-  background: transparent;
-  border: 0;
-  padding: 0 1px;
-  margin: 0;
-  font: inherit;
-  color: var(--accent);
-  cursor: pointer;
-  border-bottom: 1px dotted var(--accent);
-  border-radius: 0;
-}
-
-.engine-col-ref:hover {
-  background: var(--accent-light);
-}
-
-.engine-col-ref.is-disabled,
-.engine-col-ref:disabled {
-  color: var(--text);
-  border-bottom-style: none;
-  cursor: default;
-}
-
-.engine-table-scroll {
-  overflow-x: auto;
-  max-width: 100%;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Bounded variant — used for inline previews (e.g. input tables in the step
-   detail) where the user wants to scroll through rows without opening the
-   modal. The "view full" link below is the explicit escape hatch. */
-.engine-table-scroll--bounded {
-  max-height: 280px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  scrollbar-width: thin;
-}
-
-.engine-table-scroll--bounded thead th {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-}
-
-.engine-view-full {
-  margin-top: 4px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: #fff;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 11px;
-  font-style: italic;
-}
-
-.engine-view-full:hover {
-  background: var(--accent-light);
-  border-color: var(--accent);
-}
-
-@media (max-width: 600px) {
-  .engine-table-scroll--bounded {
-    max-height: 220px;
-  }
-}
-
-/* Pivot table: months across the x-axis, key columns sticky on the left so
-   they stay visible while you scroll through 72 months. */
-.engine-pivot-table th.engine-pivot-month,
-.engine-pivot-table td.engine-pivot-month {
-  min-width: 72px;
-  white-space: nowrap;
-}
-
-.engine-pivot-table th.engine-pivot-key,
-.engine-pivot-table td.engine-pivot-key {
-  position: sticky;
-  left: 0;
-  background: #fff;
-  z-index: 1;
-  white-space: nowrap;
-  box-shadow: 1px 0 0 var(--border);
-}
-
-.engine-pivot-table thead th.engine-pivot-key {
-  background: #f5f5f5;
-  z-index: 2;
-}
-
-/* The metric column appears between key columns and axis columns when the
-   pivot is rendering multiple value columns (one row per metric). */
-.engine-pivot-table .engine-pivot-metric-col {
-  font-size: 11px;
-}
-
-.engine-pivot-table tbody td.engine-pivot-metric-col code {
-  background: #eef2ff;
-  color: #4338ca;
-  padding: 1px 6px;
-}
-
-/* ─── Tablet ──────────────────────────────────────────────────────────── */
-
-@media (max-width: 900px) {
   .app {
-    padding: 12px 14px 48px;
+    @apply max-w-[1700px] mx-auto px-6 pt-4 pb-16;
+    transition: padding-left 0.22s ease;
   }
 
   .app-header {
-    flex-wrap: wrap;
-    gap: 12px;
+    @apply flex items-center justify-between pb-3 border-b border-gray-200 mb-4;
+  }
+
+  .header-title {
+    @apply flex flex-col gap-0.5;
+  }
+
+  .app-header h1 {
+    @apply m-0 text-[22px];
+  }
+
+  .header-scenario {
+    @apply text-[12px] text-gray-500 font-normal;
   }
 
   .header-stats {
-    flex-wrap: wrap;
-    gap: 12px;
+    @apply flex items-center gap-4;
+  }
+
+  /* ── Page section header ── */
+
+  .page-section-header {
+    @apply flex items-baseline gap-[7px] pb-[14px] mb-0.5;
+  }
+
+  .page-section-icon {
+    @apply text-[16px] text-blue-600 leading-none;
+  }
+
+  .page-section-name {
+    @apply text-[18px] font-bold leading-tight;
+  }
+
+  .page-section-sub {
+    @apply text-[14px] text-gray-500;
+  }
+
+  /* ── Stats ── */
+
+  .stat {
+    @apply text-right;
+  }
+
+  .stat-label {
+    @apply text-gray-500 text-[12px];
   }
 
   .stat-value {
-    font-size: 18px;
+    @apply text-[22px] font-bold text-blue-600 leading-[1.1];
+  }
+
+  .stat-sub {
+    @apply text-gray-500 text-[11px] mt-px;
+  }
+
+  /* ── Editable field highlight ── */
+
+  input:not([type=file]):not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]):not([type=reset]),
+  select,
+  textarea:not(.aui-composer-input) {
+    @apply bg-yellow-50;
+  }
+
+  /* Override .btn's bg-white for input/select elements so they stay yellow */
+  input.btn:not([type=file]):not([type=checkbox]):not([type=radio]),
+  select.btn {
+    @apply bg-yellow-50;
+  }
+
+  /* ── Buttons ── */
+
+  .btn {
+    @apply py-2 px-[14px] bg-white border border-gray-200 rounded-md cursor-pointer text-[13px];
+  }
+
+  .btn:hover:not(:disabled) {
+    @apply bg-gray-100;
+  }
+
+  .btn:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+
+  .undo-group {
+    @apply flex gap-0.5;
+  }
+
+  .icon-btn {
+    @apply w-8 py-1.5 px-0 text-[16px] leading-none;
+  }
+
+  /* ── Menu ── */
+
+  .sync-pill {
+    @apply fixed top-3 left-1/2 -translate-x-1/2 z-50
+           bg-gray-900 text-white text-[12px] font-medium
+           px-4 py-1.5 rounded-full shadow-lg
+           pointer-events-none;
+  }
+
+  .menu-wrap {
+    @apply relative flex items-center gap-2;
+  }
+
+  .menu-status {
+    @apply text-[12px] text-gray-500;
+  }
+
+  .menu-dropdown {
+    @apply absolute top-[calc(100%+4px)] right-0 min-w-[200px] bg-white border border-gray-200 rounded-md shadow-[0_6px_18px_rgba(0,0,0,0.12)] p-1 z-10 flex flex-col;
+  }
+
+  .menu-item {
+    @apply bg-transparent border-0 rounded px-[10px] py-2 text-left cursor-pointer text-[13px] text-gray-900;
+  }
+
+  .menu-item:hover {
+    @apply bg-gray-100;
+  }
+
+  .menu-separator {
+    @apply h-px bg-gray-200 my-1;
+  }
+
+  .menu-dropdown--right {
+    @apply right-auto left-0;
+  }
+
+  /* ── Misc section elements ── */
+
+  .hint {
+    @apply m-0 mb-2 text-gray-500 text-[12px] font-normal;
+  }
+
+  /* ── TA tabs ── */
+
+  .ta-tabs {
+    @apply flex flex-wrap gap-1.5 mb-3;
+  }
+
+  .tab {
+    @apply py-1.5 px-3 border border-gray-200 bg-white rounded-md cursor-pointer text-[13px] flex items-center gap-1.5;
+  }
+
+  .tab:hover {
+    @apply border-blue-600;
+  }
+
+  .tab.active {
+    @apply bg-blue-100 border-blue-600 text-blue-600 font-semibold;
+  }
+
+  .tab.empty {
+    @apply text-[#9ca3af];
+  }
+
+  /* ── View tabs ── */
+
+  .view-tabs {
+    @apply flex gap-1 mt-2 mx-0 px-1 border-b border-gray-200 items-end overflow-x-auto;
+  }
+
+  .view-tab {
+    @apply py-[10px] px-[18px] bg-transparent border border-gray-200 border-b-0 rounded-tl-lg rounded-tr-lg cursor-pointer text-[14px] font-semibold text-gray-500 flex flex-col items-start gap-px relative;
+    bottom: -1px;
+  }
+
+  .view-tab:hover {
+    @apply text-gray-900;
+  }
+
+  .view-tab.active {
+    @apply bg-white text-blue-600 border-gray-200 z-[1];
+  }
+
+  .view-tab-sub {
+    @apply text-[11px] font-normal text-gray-500;
+  }
+
+  .view-tab.active .view-tab-sub {
+    @apply text-gray-500;
+  }
+
+  .tab-total {
+    @apply text-[11px] text-gray-500 font-normal;
+  }
+
+  .tab.active .tab-total {
+    @apply text-blue-600;
+  }
+
+  .ta-content {
+    @apply mt-2;
+  }
+
+  .ta-summary {
+    @apply flex justify-between items-baseline py-2;
+  }
+
+  .ta-name {
+    @apply text-[16px] font-semibold;
+  }
+
+  .ta-total {
+    @apply text-[14px] text-gray-500;
+  }
+
+  /* ── Footer ── */
+
+  .app-footer {
+    @apply mt-6 p-3 bg-[#fffbea] border border-[#fde68a] rounded-md text-[#78350f] text-[12px];
+  }
+
+  .app-footer code {
+    @apply bg-black/5 px-1 py-px rounded-[3px];
+  }
+
+  /* ── Tables ── */
+
+  .employee-assumptions,
+  .commission-grid {
+    @apply max-w-[480px];
+  }
+
+  .scroll-x {
+    @apply overflow-x-auto max-w-full;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .yearly-emp-table {
+    @apply w-full border-collapse text-[13px];
+  }
+
+  .scroll-x > .yearly-emp-table {
+    width: auto;
+    @apply min-w-full;
+  }
+
+  .scroll-x > .yearly-emp-table th,
+  .scroll-x > .yearly-emp-table td {
+    @apply whitespace-nowrap;
+  }
+
+  .yearly-emp-table th,
+  .yearly-emp-table td {
+    @apply text-right px-[10px] py-1.5 border-b border-gray-200;
+  }
+
+  .yearly-emp-table th:first-child,
+  .yearly-emp-table td:first-child {
+    @apply text-left font-medium;
+  }
+
+  .yearly-emp-table thead th {
+    @apply bg-gray-100 font-semibold text-[12px] text-gray-500;
+  }
+
+  .yearly-emp-table .total-row td {
+    @apply bg-[#eef] font-bold;
+  }
+
+  .yearly-emp-table .subtotal-row td {
+    @apply bg-gray-100 font-semibold;
+  }
+
+  .yearly-emp-table td.neg {
+    @apply text-red-700;
+  }
+
+  .yearly-emp-table td.bold {
+    @apply font-semibold;
+  }
+
+  /* ── Modal ── */
+
+  .modal-backdrop {
+    @apply fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center p-6;
+  }
+
+  .modal-dialog {
+    @apply bg-white rounded-lg w-full max-h-[90vh] overflow-auto p-4 shadow-[0_12px_32px_rgba(0,0,0,0.25)];
+  }
+
+  .modal-header {
+    @apply flex justify-between items-center mb-3 gap-3;
+  }
+
+  .modal-header h2 {
+    @apply m-0 text-[16px];
+  }
+
+  /* ── Engine Preview ── */
+
+  .engine-step-body {
+    @apply grid gap-4;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .engine-step-body.has-list {
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  }
+
+  .engine-step-body > * {
+    @apply min-w-0;
+  }
+
+  .engine-step-toolbar {
+    @apply flex items-center justify-between gap-3 py-2 px-[10px] bg-gray-50 border border-gray-200 rounded-md mb-3 flex-wrap;
+  }
+
+  .engine-step-toolbar-current {
+    @apply flex flex-col gap-0.5 min-w-0;
+  }
+
+  .engine-step-counter {
+    @apply text-[11px] text-gray-500 font-medium;
+  }
+
+  .engine-step-toolbar-io {
+    @apply m-0 text-[11px] break-words;
+  }
+
+  .engine-step-nav {
+    @apply flex gap-1.5 flex-wrap;
+  }
+
+  .engine-sources-list {
+    @apply grid gap-3;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .engine-sources-list > * {
+    @apply min-w-0;
+  }
+
+  .engine-source-card {
+    @apply border border-gray-200 rounded-md p-[10px];
+  }
+
+  .engine-step-list {
+    @apply list-none p-0 m-0;
+  }
+
+  .engine-step-list-btn {
+    @apply flex items-center gap-1.5 w-full text-left py-1 px-2 border-0 border-b border-gray-200 rounded-none bg-white text-gray-900 cursor-pointer text-[12px] overflow-hidden;
+  }
+
+  .engine-step-list-btn:hover {
+    @apply bg-gray-100;
+  }
+
+  .engine-step-list-btn.is-active {
+    @apply bg-blue-100 text-blue-600 font-semibold;
+  }
+
+  .engine-step-list-index {
+    @apply text-gray-500 text-[10px] shrink-0 min-w-[22px] text-right;
+  }
+
+  .engine-step-list-ref {
+    @apply font-mono text-[11px] flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
+  }
+
+  .engine-kind-badge--compact {
+    @apply text-[8px] px-1 py-0 ml-0 shrink-0;
+  }
+
+  .engine-list-scroll {
+    @apply sticky top-3 max-h-[calc(100vh-24px)] overflow-y-auto border border-gray-200 rounded-md bg-white;
+    scrollbar-width: thin;
+  }
+
+  .engine-step-detail {
+    @apply min-w-0;
+  }
+
+  .engine-step-detail-title {
+    @apply m-0 mb-1;
+  }
+
+  .engine-step-detail-desc {
+    @apply m-0 mb-2 text-[13px];
+  }
+
+  .engine-step-detail-varname {
+    @apply m-0 mb-1.5;
+  }
+
+  .engine-step-detail-varname > .engine-ref {
+    @apply text-[12px] bg-indigo-50 text-indigo-700;
+  }
+
+  .engine-step-toolbar-ref {
+    @apply font-mono break-words;
+  }
+
+  .engine-section-label {
+    @apply mt-3 mb-1 font-semibold text-gray-500 text-[12px];
+  }
+
+  .engine-ref {
+    @apply font-mono text-[11px] bg-gray-100 py-px px-[5px] rounded-[3px] ml-1 text-gray-900;
+  }
+
+  .engine-formula {
+    @apply bg-[#f8fafc] border border-gray-200 rounded p-[10px] text-[12px];
+  }
+
+  .engine-formula-head {
+    @apply font-semibold text-blue-600 mb-1 font-mono text-[11px];
+  }
+
+  .engine-formula-body {
+    @apply m-0 font-mono text-[11.5px] leading-[1.55] whitespace-pre-wrap break-words;
+    overflow-wrap: anywhere;
+  }
+
+  .engine-input-collapse {
+    @apply mt-3 border-t border-dashed border-gray-200 pt-2;
+  }
+
+  .engine-input-collapse > summary {
+    @apply cursor-pointer text-gray-500 text-[12px];
+    list-style: revert;
+  }
+
+  .engine-input-collapse > summary > .engine-section-label {
+    @apply inline m-0;
+  }
+
+  .engine-input-collapse[open] > summary {
+    @apply mb-1.5;
+  }
+
+  .engine-headline-badge {
+    @apply inline-block text-[#b45309] text-[10px] ml-1.5 align-baseline;
+  }
+
+  .engine-headline-badge.headline-inline,
+  .engine-kind-badge.headline-inline {
+    @apply bg-[#fffbea] border border-[#fde68a] rounded-[10px] px-2 py-px text-[10px] font-medium tracking-[0.02em] uppercase;
+  }
+
+  .engine-kind-badge {
+    @apply inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-[10px] px-1.5 py-0 text-[9px] font-semibold tracking-[0.04em] uppercase ml-1.5;
+    vertical-align: 1px;
+  }
+
+  .engine-grouped-list {
+    @apply block;
+    gap: 0;
+  }
+
+  .engine-group {
+    @apply border-b border-gray-200 bg-gray-50;
+  }
+
+  .engine-group:last-child {
+    @apply border-b-0;
+  }
+
+  .engine-group[open] {
+    @apply bg-white;
+  }
+
+  .engine-group-summary {
+    @apply cursor-pointer flex items-center justify-between py-1.5 px-2 font-semibold text-[11px] text-gray-900 bg-gray-100 uppercase tracking-[0.05em] sticky top-0 z-[1];
+  }
+
+  .engine-group-name {
+    @apply flex-1;
+  }
+
+  .engine-group-count {
+    @apply font-normal text-[11px] text-gray-500 bg-gray-100 rounded-[10px] px-2 py-px;
+  }
+
+  .engine-group-desc {
+    @apply m-0 py-1 px-2 pb-1.5 text-[11px] bg-gray-50;
+  }
+
+  .engine-schema-list {
+    @apply list-none p-0 m-0 mb-2 text-[12px] flex flex-col gap-0.5;
+  }
+
+  .engine-ref-button {
+    @apply cursor-pointer border border-transparent font-mono;
+  }
+
+  .engine-ref-button:hover {
+    @apply bg-blue-100 border-blue-600 text-blue-600;
+  }
+
+  .engine-inputs-list {
+    @apply list-none p-0 m-0 flex flex-col gap-3;
+  }
+
+  .engine-input-item {
+    @apply border border-gray-200 rounded p-2 bg-gray-50;
+  }
+
+  .engine-input-item-header {
+    @apply flex items-center gap-1.5 mb-1.5;
+  }
+
+  .engine-input-item-summary {
+    @apply cursor-pointer flex items-center gap-1.5;
+    list-style: revert;
+  }
+
+  .engine-input-item-details[open] > .engine-input-item-summary {
+    @apply mb-1.5;
+  }
+
+  .engine-input-item-meta {
+    @apply ml-auto text-[10px];
+  }
+
+  .engine-pivot-axes {
+    @apply flex flex-wrap gap-4 my-1 mb-1.5 text-[11px] text-gray-500;
+  }
+
+  .engine-pivot-axes-label {
+    @apply font-semibold;
+  }
+
+  .engine-pivot-axes-name {
+    @apply font-mono text-[11px] bg-gray-100 py-px px-[5px] rounded-[3px] text-gray-900;
+  }
+
+  .engine-usage-list {
+    @apply list-none p-0 m-0 flex flex-col gap-1;
+  }
+
+  .engine-usage-btn {
+    @apply w-full flex items-center justify-between gap-2 text-left py-1.5 px-[10px] bg-white border border-gray-200 rounded text-[12px] text-gray-900 cursor-pointer;
+  }
+
+  .engine-usage-btn:hover {
+    @apply border-blue-600 bg-blue-100;
+  }
+
+  .engine-usage-name {
+    @apply font-medium flex-1 min-w-0;
+  }
+
+  .engine-usage-ref {
+    @apply shrink-0;
+  }
+
+  .engine-col-ref {
+    @apply bg-transparent border-0 px-px py-0 m-0 text-blue-600 cursor-pointer border-b border-dotted border-blue-600 rounded-none;
+    font: inherit;
+  }
+
+  .engine-col-ref:hover {
+    @apply bg-blue-100;
+  }
+
+  .engine-col-ref.is-disabled,
+  .engine-col-ref:disabled {
+    @apply text-gray-900 cursor-default;
+    border-bottom-style: none;
+  }
+
+  .engine-table-scroll {
+    @apply overflow-x-auto max-w-full;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .engine-table-scroll--bounded {
+    @apply max-h-[280px] overflow-y-auto border border-gray-200 rounded;
+    scrollbar-width: thin;
+  }
+
+  .engine-table-scroll--bounded thead th {
+    @apply sticky top-0 z-[3];
+  }
+
+  .engine-view-full {
+    @apply mt-1 py-1 px-2 border border-gray-200 rounded bg-white text-blue-600 cursor-pointer text-[11px] italic;
+  }
+
+  .engine-view-full:hover {
+    @apply bg-blue-100 border-blue-600;
+  }
+
+  /* Engine / rendering section view-mode tab strip */
+  .engine-view-tabs {
+    @apply flex gap-0 mt-3 border-b border-gray-200;
+  }
+
+  .engine-view-tab-btn {
+    @apply px-3 py-1.5 text-[12px] font-medium border-0 border-b-2 border-transparent
+           -mb-px bg-transparent cursor-pointer text-gray-500 transition-colors;
+  }
+
+  .engine-view-tab-btn:hover {
+    @apply text-gray-900;
+  }
+
+  .engine-view-tab-btn.is-active {
+    @apply text-blue-600 border-blue-600 font-semibold;
+  }
+
+  /* YAML syntax viewer */
+  .yaml-viewer {
+    @apply text-[12px] font-mono leading-[1.65] p-4 overflow-auto m-0;
+    tab-size: 2;
+    white-space: pre;
+    max-height: 70vh;
+  }
+
+  @keyframes yaml-line-flash {
+    0%   { background: #fef08a; }
+    60%  { background: #fef9c3; }
+    100% { background: transparent; }
+  }
+
+  .yaml-line-highlight {
+    animation: yaml-line-flash 1.6s ease-out;
+    border-radius: 2px;
+  }
+
+  /* Link from explorer detail panels to YAML view */
+  .engine-yaml-link {
+    @apply text-[10px] border border-gray-300 rounded px-1.5 py-0.5 ml-2
+           bg-transparent text-gray-400 cursor-pointer align-middle;
+    font-family: inherit;
+    line-height: 1.4;
+  }
+
+  .engine-yaml-link:hover {
+    @apply border-blue-400 text-blue-600;
+  }
+
+  /* Pivot table sticky key columns */
+  .engine-pivot-table th.engine-pivot-month,
+  .engine-pivot-table td.engine-pivot-month {
+    @apply min-w-[72px] whitespace-nowrap;
+  }
+
+  .engine-pivot-table th.engine-pivot-key,
+  .engine-pivot-table td.engine-pivot-key {
+    @apply sticky left-0 bg-white z-[1] whitespace-nowrap;
+    box-shadow: 1px 0 0 #e5e7eb;
+  }
+
+  .engine-pivot-table thead th.engine-pivot-key {
+    @apply bg-gray-100 z-[2];
+  }
+
+  .engine-pivot-table .engine-pivot-metric-col {
+    @apply text-[11px];
+  }
+
+  .engine-pivot-table tbody td.engine-pivot-metric-col code {
+    @apply bg-indigo-50 text-indigo-700 px-1.5 py-px;
+  }
+
+  /* ── Scenario bar ── */
+
+  .scenario-bar {
+    @apply flex flex-wrap items-center gap-2 py-2 px-6 bg-white border-b border-gray-200;
+  }
+
+  .scenario-label {
+    @apply text-[0.7rem] font-semibold uppercase tracking-[0.04em] text-gray-500 mr-1;
+  }
+
+  .scenario-chips {
+    @apply flex flex-wrap items-center gap-[0.35rem];
+  }
+
+  .scenario-chip {
+    @apply inline-flex items-center gap-[0.35rem] py-1 px-[0.6rem] text-[0.82rem] border border-gray-200 rounded-full bg-white text-gray-500 cursor-pointer;
+  }
+
+  .scenario-chip:hover {
+    @apply text-gray-900 border-[#d1d5db];
+  }
+
+  .scenario-chip.active {
+    @apply bg-blue-100 border-blue-600 text-blue-600 font-semibold;
+  }
+
+  .scenario-badge {
+    @apply inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 py-0 text-[0.68rem] font-bold rounded-full bg-blue-600 text-white;
+  }
+
+  .scenario-chip:not(.active) .scenario-badge {
+    @apply bg-gray-500;
+  }
+
+  .scenario-new {
+    @apply py-1 px-[0.6rem] text-[0.82rem] rounded-full;
+  }
+
+  .scenario-rename {
+    @apply py-1 px-2 text-[0.82rem] border border-blue-600 rounded-full outline-none min-w-[8rem];
+  }
+
+  .scenario-actions {
+    @apply flex items-center gap-3 ml-auto;
+  }
+
+  .scenario-link {
+    @apply bg-transparent border-none p-0 text-[0.78rem] text-blue-600 cursor-pointer;
+  }
+
+  .scenario-link:hover:not(:disabled) {
+    @apply underline;
+  }
+
+  .scenario-link:disabled {
+    @apply text-gray-200 cursor-default;
+  }
+
+  .scenario-link.danger {
+    @apply text-red-600;
+  }
+
+  .scenario-link.danger:disabled {
+    @apply text-gray-200;
+  }
+
+  .scenario-diff {
+    @apply basis-full mt-1 py-2 px-3 bg-gray-50 border border-gray-200 rounded-md text-[0.8rem];
+  }
+
+  .scenario-diff-empty {
+    @apply text-gray-500;
+  }
+
+  .scenario-diff-title {
+    @apply font-semibold text-gray-900;
+  }
+
+  .scenario-diff-list {
+    @apply mt-[0.35rem] mb-0 pl-[1.1rem] text-gray-500;
+    columns: 2;
+  }
+
+  /* ── Engine editable manual cells ── */
+
+  .engine-editable-badge {
+    @apply ml-2 py-[0.05rem] px-[0.4rem] text-[0.62rem] font-bold uppercase tracking-[0.04em] rounded-full bg-blue-100 text-blue-600 align-middle;
+  }
+
+  .engine-editable-cell {
+    @apply inline-block min-w-[1.5rem] px-0.5 rounded-[3px] cursor-text;
+  }
+
+  .engine-editable-cell:hover {
+    @apply bg-blue-100 shadow-[inset_0_0_0_1px_var(--accent)];
+  }
+
+  .engine-editable-empty {
+    @apply text-gray-200;
+  }
+
+  .engine-edit-input {
+    @apply box-border px-0.5 py-0 border border-blue-600 rounded-[3px] outline-none;
+    font: inherit;
+  }
+
+  /* ── Engine formula definition editor ── */
+
+  .engine-formula-list {
+    @apply flex flex-col gap-[0.35rem] mt-1 mb-3;
+  }
+
+  .engine-formula-row {
+    @apply flex flex-wrap items-baseline gap-[0.4rem] py-[0.3rem] px-2 bg-gray-50 border border-gray-200 rounded-md text-[0.8rem];
+  }
+
+  .engine-formula-row--editing {
+    @apply flex-col items-stretch;
+  }
+
+  .engine-formula-col {
+    @apply font-semibold;
+  }
+
+  .engine-formula-eq {
+    @apply text-gray-500;
+  }
+
+  .engine-formula-src {
+    @apply flex-[1_1_12rem] font-mono text-gray-900 whitespace-pre-wrap break-words;
+  }
+
+  .engine-formula-modified {
+    @apply py-[0.02rem] px-[0.35rem] text-[0.62rem] font-bold uppercase rounded-full bg-[#fef3c7] text-[#92400e];
+  }
+
+  .engine-formula-edit-head {
+    @apply flex gap-[0.4rem] items-baseline;
+  }
+
+  .engine-formula-input {
+    @apply w-full min-h-[3.5rem] mt-[0.35rem] py-[0.4rem] px-2 font-mono text-[0.8rem] border border-blue-600 rounded-md resize-y box-border;
+  }
+
+  .engine-formula-actions {
+    @apply flex items-center gap-3 mt-[0.4rem];
+  }
+
+  .engine-formula-err {
+    @apply mt-[0.35rem] py-[0.3rem] px-2 text-[0.78rem] text-red-700 bg-[#fef2f2] border border-[#fecaca] rounded-md;
+  }
+
+  .engine-formula-cols {
+    @apply mt-[0.4rem] text-[0.72rem] break-words;
+  }
+
+  /* ── Engine inline formula pencil ── */
+
+  .engine-formula-line {
+    @apply flex flex-wrap items-baseline gap-[0.4rem] py-px;
+  }
+
+  .engine-formula-line-toks {
+    @apply whitespace-pre-wrap break-words;
+  }
+
+  .engine-formula-line-actions {
+    @apply inline-flex items-center gap-[0.4rem];
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  .engine-formula-pencil {
+    @apply border-none bg-transparent cursor-pointer text-[12px] text-blue-600 px-0.5 py-0 leading-none opacity-40;
+    transition: opacity 0.1s;
+  }
+
+  .engine-formula-line:hover .engine-formula-pencil,
+  .engine-formula-pencil:focus-visible,
+  .engine-formula-pencil:hover {
+    @apply opacity-100;
+  }
+
+  .engine-formula-editor {
+    @apply basis-full mt-[0.35rem];
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  .engine-formula-note {
+    @apply mt-2 mb-0;
+  }
+
+  /* ── Engine editable Operation params ── */
+
+  .engine-op-params {
+    @apply flex flex-col gap-0.5 my-1 mx-0 mb-0.5 py-1.5 px-2 bg-indigo-50 border border-dashed border-gray-200 rounded;
+  }
+
+  .engine-op-param {
+    @apply flex flex-wrap items-baseline gap-[0.4rem] text-[11.5px];
+  }
+
+  .engine-op-param-label {
+    @apply text-gray-500 min-w-[5.5rem];
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  .engine-op-param-val {
+    @apply font-mono text-gray-900 break-words;
+  }
+
+  /* ── AI sidebar ── */
+
+  .aui-sidebar {
+    @apply fixed top-0 left-0 bottom-0 w-10 bg-white border-r border-gray-200 flex flex-row z-[200];
+    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+    transition: width 0.22s ease, box-shadow 0.22s ease;
+  }
+
+  .aui-sidebar.aui-open {
+    @apply w-[380px];
+    box-shadow: 4px 0 18px rgba(0, 0, 0, 0.10);
+  }
+
+  .aui-strip {
+    @apply absolute top-0 left-0 bottom-0 w-10 flex flex-col items-center py-2 gap-1;
+    transition: opacity 0.12s ease;
+  }
+
+  .aui-sidebar.aui-open .aui-strip {
+    @apply opacity-0 pointer-events-none;
+  }
+
+  .aui-expand-btn {
+    @apply text-blue-600;
+  }
+
+  .aui-panel {
+    @apply absolute top-0 left-0 right-0 bottom-0 flex flex-col opacity-0 pointer-events-none;
+    transition: opacity 0.12s ease;
+  }
+
+  .aui-sidebar.aui-open .aui-panel {
+    @apply opacity-100 pointer-events-auto;
+    transition: opacity 0.15s ease 0.08s;
+  }
+
+  .aui-sidebar-header {
+    @apply flex items-center justify-between py-3 px-[14px] border-b border-gray-200 shrink-0;
+  }
+
+  .aui-sidebar-title {
+    @apply font-semibold text-[14px];
+  }
+
+  .aui-thread {
+    @apply flex flex-col flex-1 min-h-0;
+  }
+
+  .aui-viewport {
+    @apply flex-1 overflow-y-auto p-3 flex flex-col gap-2.5;
+    scrollbar-width: thin;
+  }
+
+  .aui-empty {
+    @apply flex flex-col items-center justify-center flex-1 text-center text-gray-500 text-[13px] py-8 px-4 gap-2;
+  }
+
+  .aui-empty p {
+    @apply m-0;
+  }
+
+  .aui-hint {
+    @apply text-[12px] text-gray-500;
+  }
+
+  .aui-msg {
+    @apply flex flex-col;
+  }
+
+  .aui-user {
+    @apply items-end;
+  }
+
+  .aui-assistant {
+    @apply items-start;
+  }
+
+  .aui-bubble {
+    @apply max-w-[88%] py-2 px-3 rounded-xl text-[13px] leading-[1.5] break-words;
+  }
+
+  .aui-user .aui-bubble {
+    @apply bg-blue-600 text-white rounded-br-[3px];
+  }
+
+  .aui-assistant .aui-bubble {
+    @apply bg-gray-100 text-gray-900 rounded-bl-[3px];
+  }
+
+  .aui-footer {
+    @apply py-[10px] px-3 border-t border-gray-200 shrink-0;
+  }
+
+  .aui-composer {
+    @apply flex items-end gap-2 bg-gray-50 border border-gray-200 rounded-[10px] py-1.5 px-2;
+  }
+
+  .aui-composer-input {
+    @apply flex-1 border-0 bg-transparent resize-none text-[13px] leading-[1.45] outline-none max-h-[120px] overflow-y-auto;
+    font: inherit;
+    scrollbar-width: thin;
+  }
+
+  .aui-send {
+    @apply shrink-0 w-7 h-7 rounded-lg bg-blue-600 text-white border-0 cursor-pointer text-[16px] flex items-center justify-center leading-none p-0;
+  }
+
+  .aui-send:hover {
+    @apply bg-[#1d4ed8];
+  }
+
+  .aui-send:disabled {
+    @apply bg-gray-200 cursor-not-allowed;
+  }
+
+  .aui-clear-btn {
+    @apply mt-1.5 w-full text-center text-[11px] text-gray-400 bg-transparent border-0 cursor-pointer py-0.5;
+  }
+
+  .aui-clear-btn:hover {
+    @apply text-gray-600;
+  }
+
+  /* ── Model error banner ── */
+
+  .model-error-banner {
+    @apply flex items-center justify-between gap-4 flex-wrap mx-6 py-2 px-[0.9rem] bg-[#fef2f2] border border-[#fecaca] rounded-md text-[#991b1b] text-[0.85rem];
+  }
+
+  /* ── Strip nav icons ── */
+
+  .aui-strip-divider {
+    @apply w-6 h-px bg-gray-200 my-0.5 shrink-0;
+  }
+
+  .aui-strip-spacer {
+    @apply flex-1;
+  }
+
+  .aui-nav-strip-btn {
+    @apply w-8 h-8 flex items-center justify-center bg-none border-none rounded-md cursor-pointer text-[15px] text-gray-500;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  .aui-nav-strip-btn:hover {
+    @apply bg-gray-50 text-gray-900;
+  }
+
+  .aui-nav-strip-btn.active {
+    @apply text-blue-600 bg-blue-100;
+  }
+
+  /* ── Panel section nav row ── */
+
+  .aui-nav-row {
+    @apply flex gap-0.5 py-1.5 px-2 border-b border-gray-200 shrink-0;
+  }
+
+  .aui-nav-row-btn {
+    @apply flex-1 flex flex-col items-center gap-0.5 py-1.5 px-1 bg-none border border-transparent rounded-md cursor-pointer text-gray-500;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+
+  .aui-nav-row-btn:hover {
+    @apply bg-gray-50 text-gray-900;
+  }
+
+  .aui-nav-row-btn.active {
+    @apply bg-blue-100 text-blue-600 border-blue-600;
+  }
+
+  .aui-nav-icon {
+    @apply text-[14px] leading-none;
+  }
+
+  .aui-nav-label {
+    @apply text-[10px] font-medium leading-none tracking-[0.02em];
+  }
+
+  /* ── Mobile section nav ── */
+
+  .mobile-section-nav {
+    @apply hidden gap-0.5 border-b-2 border-gray-200 mb-0;
+    padding: 0 0 0 2px;
+  }
+
+  .mobile-section-tab {
+    @apply py-[10px] px-4 text-[13px] font-medium bg-none border-none border-b-[3px] border-transparent cursor-pointer text-gray-500 rounded-tl-md rounded-tr-md flex items-center gap-[5px] flex-[0_0_auto];
+    margin-bottom: -2px;
+    transition: color 0.12s, background 0.12s;
+  }
+
+  .mobile-section-tab:hover {
+    @apply text-gray-900 bg-gray-100;
+  }
+
+  .mobile-section-tab.active {
+    @apply text-blue-600 border-b-blue-600 font-semibold;
+  }
+
+  .mobile-section-icon {
+    @apply text-[14px];
+  }
+
+  /* ── Mobile FAB ── */
+
+  .aui-mobile-fab {
+    @apply hidden fixed bottom-5 left-3 w-11 h-11 rounded-full bg-blue-600 text-white border-none cursor-pointer text-[18px] items-center justify-center shadow-[0_2px_12px_rgba(0,0,0,0.22)] z-[198];
+    transition: transform 0.12s ease;
+  }
+
+  .aui-mobile-fab:active {
+    @apply scale-[0.92];
+  }
+
+  .aui-mobile-fab--hidden {
+    display: none !important;
+  }
+
+  /* ── Mobile backdrop ── */
+
+  .aui-backdrop {
+    @apply hidden fixed inset-0 bg-black/45 z-[199] opacity-0 pointer-events-none;
+    transition: opacity 0.22s ease;
+  }
+
+  .aui-backdrop--visible {
+    @apply opacity-100 pointer-events-auto;
+  }
+
+}
+
+/* ─── Media queries ───────────────────────────────────────────────────────── */
+
+/* Desktop: reserve space for the thin 40px strip */
+@media (min-width: 769px) {
+  .app {
+    padding-left: calc(40px + 16px);
+  }
+  .app.sidebar-open {
+    padding-left: calc(380px + 24px);
+  }
+}
+
+@media (max-width: 900px) {
+  /* On phones/tablets the list is below the detail (no sidebar). */
+  .engine-list-scroll {
+    @apply static max-h-[50vh];
+  }
+
+  .app {
+    @apply py-3 px-[14px] pb-12;
+  }
+
+  .app-header {
+    @apply flex-wrap gap-3;
+  }
+
+  .header-stats {
+    @apply flex-wrap gap-3;
+  }
+
+  .stat-value {
+    @apply text-[18px];
   }
 
   /* Make the row of view tabs scroll instead of wrap weirdly. */
   .view-tabs {
-    overflow-x: auto;
-    overflow-y: hidden;
-    flex-wrap: nowrap;
+    @apply overflow-x-auto overflow-y-hidden flex-nowrap;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
   }
 
   .view-tab {
-    flex: 0 0 auto;
-    padding: 8px 12px;
-    font-size: 13px;
+    @apply flex-[0_0_auto] py-2 px-3 text-[13px];
   }
 
   .engine-step-body.has-list {
@@ -1090,406 +1253,156 @@ section h3 {
   }
 }
 
-/* ─── Phone ───────────────────────────────────────────────────────────── */
-
 @media (max-width: 600px) {
   html,
   body,
   #root {
-    font-size: 13px;
+    @apply text-[13px];
   }
 
   .app {
-    padding: 8px 10px 40px;
+    @apply py-2 px-[10px] pb-10;
   }
 
   .app-header {
-    flex-direction: column;
-    align-items: stretch;
-    padding-bottom: 8px;
+    @apply flex-col items-stretch pb-2;
   }
 
   .app-header h1 {
-    font-size: 18px;
+    @apply text-[18px];
   }
 
   .header-stats {
-    justify-content: space-between;
+    @apply justify-between;
   }
 
   .stat {
-    text-align: left;
-    flex: 1 1 auto;
-    min-width: 0;
+    @apply text-left flex-[1_1_auto] min-w-0;
   }
 
   .stat-value {
-    font-size: 16px;
+    @apply text-[16px];
   }
 
   .stat-sub {
-    font-size: 10px;
+    @apply text-[10px];
   }
 
   section {
-    padding: 10px;
-    margin-bottom: 10px;
+    @apply p-[10px] mb-[10px];
   }
 
   section h2 {
-    font-size: 14px;
+    @apply text-[14px];
   }
 
   .ta-summary {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 2px;
+    @apply flex-col items-stretch gap-0.5;
   }
 
   /* Larger touch targets for primary buttons. */
   .btn {
-    padding: 10px 14px;
-    font-size: 13px;
+    @apply py-[10px] px-[14px] text-[13px];
   }
 
   .icon-btn {
-    width: 38px;
-    padding: 8px 0;
+    @apply w-[38px] py-2;
   }
 
   .menu-dropdown {
-    right: auto;
-    left: 0;
-    min-width: 180px;
+    @apply right-auto left-0 min-w-[180px];
   }
 
   .view-tab {
-    padding: 8px 10px;
-    font-size: 12px;
+    @apply py-2 px-[10px] text-[12px];
   }
 
   .view-tab-sub {
-    font-size: 10px;
+    @apply text-[10px];
   }
 
   /* Modal: shrink padding so dialog content has room on a phone. */
   .modal-backdrop {
-    padding: 8px;
+    @apply p-2;
   }
 
   .modal-dialog {
-    padding: 12px;
-    max-height: 94vh;
+    @apply p-3 max-h-[94vh];
   }
 
   .modal-header h2 {
-    font-size: 14px;
+    @apply text-[14px];
   }
 
   .yearly-emp-table {
-    font-size: 12px;
+    @apply text-[12px];
   }
 
   .yearly-emp-table th,
   .yearly-emp-table td {
-    padding: 4px 6px;
+    @apply py-1 px-1.5;
   }
 
   .app-footer {
-    font-size: 11px;
+    @apply text-[11px];
   }
 
-  /* Step explorer toolbar: stack current-step info above the nav row, and
-     spread the Prev / Next / Browse buttons across the row. */
+  /* Step explorer toolbar: stack current-step info above the nav row. */
   .engine-step-toolbar {
-    flex-direction: column;
-    align-items: stretch;
+    @apply flex-col items-stretch;
   }
 
   .engine-step-nav {
-    justify-content: space-between;
+    @apply justify-between;
   }
 
   .engine-step-nav .btn {
-    flex: 1 1 auto;
+    @apply flex-[1_1_auto];
+  }
+
+  .engine-table-scroll--bounded {
+    @apply max-h-[220px];
   }
 }
 
-/* ── Scenario bar ───────────────────────────────────────────────────────── */
-.scenario-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1.5rem;
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
-}
-.scenario-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin-right: 0.25rem;
-}
-.scenario-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-}
-.scenario-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.82rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--muted);
-  cursor: pointer;
-}
-.scenario-chip:hover { color: var(--text); border-color: #d1d5db; }
-.scenario-chip.active {
-  background: var(--accent-light);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 600;
-}
-.scenario-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.1rem;
-  height: 1.1rem;
-  padding: 0 0.25rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-}
-.scenario-chip:not(.active) .scenario-badge { background: var(--muted); }
-.scenario-new { padding: 0.25rem 0.6rem; font-size: 0.82rem; border-radius: 999px; }
-.scenario-rename {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.82rem;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  outline: none;
-  min-width: 8rem;
-}
-.scenario-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-left: auto;
-}
-.scenario-link {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 0.78rem;
-  color: var(--accent);
-  cursor: pointer;
-}
-.scenario-link:hover:not(:disabled) { text-decoration: underline; }
-.scenario-link:disabled { color: var(--border); cursor: default; }
-.scenario-link.danger { color: #dc2626; }
-.scenario-link.danger:disabled { color: var(--border); }
-.scenario-diff {
-  flex-basis: 100%;
-  margin-top: 0.25rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.8rem;
-}
-.scenario-diff-empty { color: var(--muted); }
-.scenario-diff-title { font-weight: 600; color: var(--text); }
-.scenario-diff-list {
-  margin: 0.35rem 0 0;
-  padding-left: 1.1rem;
-  color: var(--muted);
-  columns: 2;
-}
+/* ── Mobile overrides (≤ 768px) ── */
+@media (max-width: 768px) {
+  /* Sidebar: drawer sliding in from the left */
+  .aui-sidebar {
+    width: min(360px, 90vw);
+    @apply shadow-none;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
 
-/* ── Engine Preview: editable manual cells ──────────────────────────────── */
-.engine-editable-badge {
-  margin-left: 0.5rem;
-  padding: 0.05rem 0.4rem;
-  font-size: 0.62rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-radius: 999px;
-  background: var(--accent-light);
-  color: var(--accent);
-  vertical-align: middle;
-}
-.engine-editable-cell {
-  display: inline-block;
-  min-width: 1.5rem;
-  padding: 0 2px;
-  border-radius: 3px;
-  cursor: text;
-}
-.engine-editable-cell:hover {
-  background: var(--accent-light);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-.engine-editable-empty { color: var(--border); }
-.engine-edit-input {
-  box-sizing: border-box;
-  padding: 0 2px;
-  font: inherit;
-  border: 1px solid var(--accent);
-  border-radius: 3px;
-  outline: none;
-}
+  .aui-sidebar.aui-open {
+    width: min(360px, 90vw);
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+  }
 
-/* ── Engine Preview: formula definition editor ──────────────────────────── */
-.engine-formula-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin: 0.25rem 0 0.75rem;
-}
-.engine-formula-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem;
-  padding: 0.3rem 0.5rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.8rem;
-}
-.engine-formula-row--editing { flex-direction: column; align-items: stretch; }
-.engine-formula-col { font-weight: 600; }
-.engine-formula-eq { color: var(--muted); }
-.engine-formula-src {
-  flex: 1 1 12rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.engine-formula-modified {
-  padding: 0.02rem 0.35rem;
-  font-size: 0.62rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  border-radius: 999px;
-  background: #fef3c7;
-  color: #92400e;
-}
-.engine-formula-edit-head { display: flex; gap: 0.4rem; align-items: baseline; }
-.engine-formula-input {
-  width: 100%;
-  min-height: 3.5rem;
-  margin-top: 0.35rem;
-  padding: 0.4rem 0.5rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8rem;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  resize: vertical;
-  box-sizing: border-box;
-}
-.engine-formula-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.4rem; }
-.engine-formula-err {
-  margin-top: 0.35rem;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.78rem;
-  color: #b91c1c;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 6px;
-}
-.engine-formula-cols { margin-top: 0.4rem; font-size: 0.72rem; word-break: break-word; }
+  /* Strip: hidden on mobile — FAB handles opening */
+  .aui-strip {
+    @apply hidden;
+  }
 
-/* ── Engine Preview: inline formula pencil ──────────────────────────────── */
-.engine-formula-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem;
-  padding: 1px 0;
-}
-.engine-formula-line-toks { white-space: pre-wrap; word-break: break-word; }
-.engine-formula-line-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: system-ui, -apple-system, sans-serif;
-}
-.engine-formula-pencil {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--accent);
-  padding: 0 2px;
-  line-height: 1;
-  opacity: 0.4;
-  transition: opacity 0.1s;
-}
-.engine-formula-line:hover .engine-formula-pencil,
-.engine-formula-pencil:focus-visible,
-.engine-formula-pencil:hover { opacity: 1; }
-.engine-formula-editor {
-  flex-basis: 100%;
-  margin-top: 0.35rem;
-  font-family: system-ui, -apple-system, sans-serif;
-}
-.engine-formula-note { margin: 0.5rem 0 0; }
+  /* Backdrop and FAB: activate on mobile */
+  .aui-backdrop {
+    @apply block;
+  }
 
-/* ── Engine Preview: editable Operation (structural) params ─────────────── */
-.engine-op-params {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 4px 0 2px;
-  padding: 6px 8px;
-  background: #eef2ff;
-  border: 1px dashed var(--border);
-  border-radius: 4px;
-}
-.engine-op-param {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem;
-  font-size: 11.5px;
-}
-.engine-op-param-label {
-  color: var(--muted);
-  min-width: 5.5rem;
-  font-family: system-ui, -apple-system, sans-serif;
-}
-.engine-op-param-val {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text);
-  word-break: break-word;
-}
+  .aui-mobile-fab {
+    @apply flex;
+  }
 
-/* ── Model override error banner ────────────────────────────────────────── */
-.model-error-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin: 0 1.5rem;
-  padding: 0.5rem 0.9rem;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 6px;
-  color: #991b1b;
-  font-size: 0.85rem;
+  /* Mobile section nav: horizontal scroll */
+  .mobile-section-nav {
+    @apply flex overflow-x-auto overflow-y-hidden flex-nowrap pb-0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .mobile-section-nav::-webkit-scrollbar {
+    display: none;
+  }
 }

@@ -26,12 +26,24 @@ import {
 } from './formula';
 import { annualSummaryByType, contractValueHistory, highLevelType, quarterlyPivot, syncHubSpot } from './hubspot';
 import { getLineItemConfig, isClassified } from './lineItemConfig';
+import { Button } from '@/components/ui/button';
+import { AIAssistant, buildSystemPrompt } from './components/AIAssistant';
+import ReportDefinitionEditor from './report/ReportDefinitionEditor';
+import YamlViewer from './components/YamlViewer';
+import { type SavedModel, loadSavedModels, persistSavedModels } from './modelStore';
+import { weeklyCashflowModel } from './models/weeklyCashflowModel';
+import { evaluateModel, type EvalResult, type Row, type Table } from './engine';
+import { cashflowReport } from './report/cashflowReport';
+import reportYamlRaw from './report/report.yaml';
+import cashflowReportYamlRaw from './report/cashflow_report.yaml';
+import engineLayoutRaw from './view-layout/engine.yaml';
+import type { EngineLayoutConfig } from './view-layout/types';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-type View = 'model' | 'total' | 'hubspot' | 'hubspot-deals' | 'employees' | 'costs' | 'budget' | 'balance-sheet' | 'engine';
+type View = 'model' | 'total' | 'hubspot' | 'hubspot-deals' | 'employees' | 'costs' | 'budget' | 'balance-sheet';
 
-const ALL_VIEWS: View[] = ['model', 'total', 'hubspot', 'hubspot-deals', 'employees', 'costs', 'budget', 'balance-sheet', 'engine'];
+const ALL_VIEWS: View[] = ['model', 'total', 'hubspot', 'hubspot-deals', 'employees', 'costs', 'budget', 'balance-sheet'];
 const DEFAULT_VIEW: View = 'total';
 
 interface Route {
@@ -175,7 +187,7 @@ export default function App() {
   const [route, navigate] = useHashRoute();
   const view = route.view;
   const setView = (v: View) => navigate({ view: v });
-  const setEngineRef = (ref: string) => navigate({ view: 'engine', ref });
+  const [engineRef, setEngineRef] = useState<string | undefined>(undefined);
   const [lastSyncMeta, setLastSyncMeta] = useState<import('./hubspot').SyncResult['meta'] | null>(null);
 
   // Formula / operation overrides patch the model itself (base case / model-wide).
@@ -183,19 +195,31 @@ export default function App() {
   useEffect(() => { saveFormulaOverrides(formulaOverrides); }, [formulaOverrides]);
   const patchedModel = useMemo(() => applyFormulaOverrides(salesModel, formulaOverrides), [formulaOverrides]);
 
+  // Merge the engine.yaml layout (groups + outputs) onto whichever model variant
+  // we're using. salesModel itself has groups/outputs as empty arrays; the yaml
+  // is the source of truth for the explorer sidebar structure.
+  const engineLayout = engineLayoutRaw as EngineLayoutConfig;
+  const withLayout = (m: typeof salesModel) => ({
+    ...m,
+    groups: engineLayout.groups ?? [],
+    outputs: engineLayout.outputs ?? [],
+  });
+
   // Evaluate with the patched model. If a (stale) override makes the model
   // un-evaluable, fall back to the base model and surface an error banner so
   // the app never white-screens.
   const { engineResult, modelForView, evalError } = useMemo(() => {
     try {
-      return { engineResult: evaluateSalesModel(input, patchedModel), modelForView: patchedModel, evalError: null as string | null };
+      return { engineResult: evaluateSalesModel(input, patchedModel), modelForView: withLayout(patchedModel), evalError: null as string | null };
     } catch (e) {
-      return {
-        engineResult: evaluateSalesModel(input, salesModel),
-        modelForView: salesModel,
-        evalError: e instanceof Error ? e.message : String(e),
-      };
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        return { engineResult: evaluateSalesModel(input, salesModel), modelForView: withLayout(salesModel), evalError: msg };
+      } catch {
+        return { engineResult: { tables: {}, trace: [] }, modelForView: withLayout(salesModel), evalError: msg };
+      }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, patchedModel]);
 
   // Commit a formula/operation edit only if it parses (strict) AND the model
@@ -221,6 +245,30 @@ export default function App() {
     });
   const clearFormulaOverrides = () => setFormulaOverrides({});
 
+  // Saved model slots — each stores a full snapshot of (scenarioStore, formulaOverrides).
+  const [savedModels, setSavedModels] = useState<SavedModel[]>(() => loadSavedModels());
+  useEffect(() => { persistSavedModels(savedModels); }, [savedModels]);
+
+  const saveCurrentModel = (name: string) => {
+    const id = newId();
+    setSavedModels((prev) => [
+      ...prev,
+      { id, name, savedAt: new Date().toISOString(), scenarioStore: store, formulaOverrides },
+    ]);
+  };
+
+  const loadSavedModel = (model: SavedModel) => {
+    setStore(model.scenarioStore);
+    setFormulaOverrides(model.formulaOverrides);
+    const active =
+      model.scenarioStore.scenarios.find((s) => s.id === model.scenarioStore.activeId) ??
+      model.scenarioStore.scenarios[0];
+    if (active) setReset(applyOverrides(base, active.overrides));
+  };
+
+  const deleteSavedModel = (id: string) =>
+    setSavedModels((prev) => prev.filter((m) => m.id !== id));
+
   const summary = useMemo(() => engineSummary(engineResult), [engineResult]);
   const handleReportEdit = (edit: Parameters<typeof applyEditToInput>[1]) =>
     setInput((prev) => applyEditToInput(prev, edit));
@@ -234,7 +282,16 @@ export default function App() {
       Object.keys(input.hubspot.lineItems),
       input.hubspotSync,
     );
-    setInput((prev) => ({ ...prev, hubspot: result.hubspot }));
+    // Fork into a new scenario so the pre-sync state is preserved.
+    const syncedInput = { ...input, hubspot: result.hubspot };
+    const id = newId();
+    const syncDate = new Date().toISOString().slice(0, 10);
+    const name = `${activeScenario.name} (HS ${syncDate})`;
+    setStore((prev) => ({
+      scenarios: [...prev.scenarios, { id, name, overrides: computeOverrides(base, syncedInput) }],
+      activeId: id,
+    }));
+    setReset(syncedInput);
     setLastSyncMeta(result.meta);
     const { meta } = result;
     const parts = [
@@ -251,38 +308,146 @@ export default function App() {
 
   const { modeledTotal, hubspotTotal, grandTotal, employeeTotal, opexTotal, ebitdaTotal } = summary;
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [section, setSection] = useState('web');
+  const [renderingViewMode, setRenderingViewMode] = useState<'ui' | 'yaml'>('ui');
+  const [renderingHighlightRef, setRenderingHighlightRef] = useState<string | undefined>(undefined);
+  const [syncPill, setSyncPill] = useState<string | null>(null);
+  const [appMode, setAppMode] = useState<'financial-model' | 'weekly-cashflow'>('financial-model');
+  const [cashflowView, setCashflowView] = useState<'cashflow-summary' | 'cashflow-inflows' | 'cashflow-outflows' | 'cashflow-bank'>('cashflow-summary');
+  const [cashflowOverrides, setCashflowOverrides] = useState<Record<string, Table>>({});
+  const cashflowResult = useMemo(
+    () => evaluateModel(weeklyCashflowModel, { prefetchedSources: cashflowOverrides }),
+    [cashflowOverrides],
+  );
+  const currentSection = section;
+
+  const handleCashflowEdit = (edit: import('./report/EngineSection').ReportEdit) => {
+    const src = weeklyCashflowModel.sources[edit.source];
+    if (!src || src.kind !== 'manual') return;
+    const currentRows: Row[] = cashflowOverrides[edit.source]?.rows ?? src.defaults;
+    const idCols = Object.keys(edit.identity);
+    const updated = currentRows.map(row => {
+      const matches = idCols.every(k => String(row[k]) === String(edit.identity[k]));
+      if (!matches) return row;
+      return { ...row, [edit.col]: edit.value };
+    });
+    setCashflowOverrides(prev => ({
+      ...prev,
+      [edit.source]: { schema: src.schema, rows: updated },
+    }));
+  };
+
+  const CASHFLOW_EDITABLE = new Set(['forecast_items_t', 'capital_events_t']);
+
+  const onNavigateSection = (s: string) => {
+    setSection(s);
+    if (s === 'web' || s === 'scenarios') {
+      // ensure we're on a valid web view
+      if (!ALL_VIEWS.includes(view)) setView('total');
+    }
+  };
+
+  const runXeroSync = async (): Promise<string> => {
+    setSyncPill('Fetching Xero actuals…');
+    try {
+      const res = await fetch('/api/xero/sync');
+      const data = await res.json() as import('./xero').XeroSyncResponse;
+      if (!data.ok) throw new Error(data.error);
+      setSyncPill('Building actuals…');
+      const { buildActualsFromXero } = await import('./xero');
+      const { actuals, summary: xeroSummary } = buildActualsFromXero(data, input.dates);
+      const syncedInput = { ...input, actuals };
+      const id = newId();
+      const syncDate = new Date().toISOString().slice(0, 10);
+      const name = `${activeScenario.name} (Xero ${syncDate})`;
+      setStore((prev) => ({
+        scenarios: [...prev.scenarios, { id, name, overrides: computeOverrides(base, syncedInput) }],
+        activeId: id,
+      }));
+      setReset(syncedInput);
+      setSyncPill(`✓ ${xeroSummary}`);
+      setTimeout(() => setSyncPill(null), 6000);
+      return xeroSummary;
+    } catch (err) {
+      setSyncPill(null);
+      throw err;
+    }
+  };
+
+  const systemPrompt = useMemo(() => buildSystemPrompt({
+    model: modelForView,
+    formulaOverrides,
+    scenarios: store.scenarios,
+    activeScenarioId: store.activeId,
+    engineResult,
+  }), [modelForView, formulaOverrides, store.scenarios, store.activeId, engineResult]);
+
   return (
-    <div className="app">
+    <div className={`app${sidebarOpen ? ' sidebar-open' : ''}`}>
+      {syncPill && <div className="sync-pill">{syncPill}</div>}
+      <AIAssistant
+        open={sidebarOpen}
+        onMinimize={() => setSidebarOpen(false)}
+        onExpand={() => setSidebarOpen(true)}
+        systemPrompt={systemPrompt}
+        currentSection={currentSection}
+        onNavigateSection={onNavigateSection}
+        onSetFormula={setFormula}
+        onResetFormula={resetFormula}
+        onClearFormulaOverrides={clearFormulaOverrides}
+        onNavigate={(v) => setView(v as View)}
+        onNewScenario={newScenario}
+        onSwitchScenario={switchScenario}
+        onRenameScenario={renameScenario}
+        onDeleteScenario={deleteScenario}
+        onQueryTable={(table, limit) => (engineResult.tables[table]?.rows ?? []).slice(0, limit ?? 72)}
+        onMenuReset={reset}
+        onMenuDownload={async () => {
+          const { downloadModelAsExcelViaEngine } = await import('./report/downloadReport');
+          await downloadModelAsExcelViaEngine(input);
+        }}
+        onMenuSync={runHubSpotSync}
+        onMenuXeroSync={runXeroSync}
+      />
       <header className="app-header">
-        <h1>Bitfount Sales Model</h1>
+        <h1>
+          {appMode === 'weekly-cashflow' ? 'Bitfount Weekly Cashflow' : 'Bitfount Sales Model'}
+        </h1>
         <div className="header-stats">
-          <div className="stat">
-            <div className="stat-label">6-year revenue (HubSpot + modeled)</div>
-            <div className="stat-value">${Math.round(grandTotal).toLocaleString()}</div>
-            <div className="stat-sub">
-              ${Math.round(modeledTotal).toLocaleString()} modeled · ${Math.round(hubspotTotal).toLocaleString()} HubSpot
+          {appMode === 'financial-model' && (
+            <div className="stat">
+              <div className="stat-label">6-year revenue (HubSpot + modeled)</div>
+              <div className="stat-value">${Math.round(grandTotal).toLocaleString()}</div>
+              <div className="stat-sub">
+                ${Math.round(modeledTotal).toLocaleString()} modeled · ${Math.round(hubspotTotal).toLocaleString()} HubSpot
+              </div>
             </div>
-          </div>
+          )}
+          {appMode === 'financial-model' && (
           <div className="undo-group">
-            <button
+            <Button
               onClick={undo}
               disabled={!canUndo}
-              className="btn icon-btn"
+              size="icon"
+              variant="outline"
               title={`Undo (${navigator.platform.includes('Mac') ? '⌘Z' : 'Ctrl+Z'}) — ${historyDepth} change${historyDepth === 1 ? '' : 's'} back`}
               aria-label="Undo"
             >
               ↶
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={redo}
               disabled={!canRedo}
-              className="btn icon-btn"
+              size="icon"
+              variant="outline"
               title={`Redo (${navigator.platform.includes('Mac') ? '⇧⌘Z' : 'Ctrl+Shift+Z'})`}
               aria-label="Redo"
             >
               ↷
-            </button>
+            </Button>
           </div>
+          )}
           <HeaderMenu
             onReset={reset}
             onDownload={async () => {
@@ -290,30 +455,229 @@ export default function App() {
               await downloadModelAsExcelViaEngine(input);
             }}
             onSync={runHubSpotSync}
+            onXeroSync={runXeroSync}
+            savedModels={savedModels}
+            onSaveCurrentModel={saveCurrentModel}
+            onLoadModel={loadSavedModel}
+            onDeleteModel={deleteSavedModel}
+            appMode={appMode}
+            onSetAppMode={setAppMode}
           />
         </div>
       </header>
 
-      <ScenarioBar
-        scenarios={store.scenarios}
-        activeId={store.activeId}
-        onSwitch={switchScenario}
-        onNew={newScenario}
-        onRename={renameScenario}
-        onDelete={deleteScenario}
-        onResetActive={resetActiveScenario}
-      />
-
-      {evalError && (
-        <div className="model-error-banner" role="alert">
-          <span>
-            <strong>Model edits couldn't be applied:</strong> {evalError} — showing the base model.
-          </span>
-          <button className="btn" onClick={clearFormulaOverrides}>Clear all model edits</button>
+      {appMode === 'weekly-cashflow' && currentSection === 'web' && (
+        <div className="view-tabs" role="tablist">
+          {([
+            { id: 'cashflow-summary', label: 'Cash Summary' },
+            { id: 'cashflow-inflows', label: 'Inflows' },
+            { id: 'cashflow-outflows', label: 'Outflows' },
+            { id: 'cashflow-bank', label: 'Bank Accounts' },
+          ] as const).map((tab) => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={cashflowView === tab.id}
+              className={`view-tab ${cashflowView === tab.id ? 'active' : ''}`}
+              onClick={() => setCashflowView(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       )}
 
-      <div className="view-tabs" role="tablist">
+      {appMode === 'weekly-cashflow' && currentSection === 'web' && (
+        <EngineSection
+          report={cashflowReport}
+          evalResult={cashflowResult}
+          model={weeklyCashflowModel}
+          sectionId={cashflowView}
+        />
+      )}
+
+      {appMode === 'weekly-cashflow' && currentSection === 'engine' && (
+        <EnginePreview
+          model={weeklyCashflowModel}
+          result={cashflowResult}
+          currentRef={engineRef}
+          onRefChange={setEngineRef}
+          identityFor={(ref) => SOURCE_IDENTITY[ref] ?? []}
+          editableSources={CASHFLOW_EDITABLE}
+          onEdit={handleCashflowEdit}
+        />
+      )}
+
+      {appMode === 'weekly-cashflow' && currentSection === 'rendering' && (
+        <>
+          <section>
+            <div className="ta-summary">
+              <span className="ta-name">Rendering Engine</span>
+              <span className="ta-total">
+                {((cashflowReportYamlRaw as { sections?: unknown[] })?.sections ?? []).length} sections
+              </span>
+            </div>
+            <p className="hint">
+              Report layout defined in <code>src/report/cashflow_report.yaml</code>.
+            </p>
+            <div className="engine-view-tabs">
+              {(['ui', 'yaml'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  className={`engine-view-tab-btn${renderingViewMode === tab ? ' is-active' : ''}`}
+                  onClick={() => { setRenderingViewMode(tab); if (tab !== 'yaml') setRenderingHighlightRef(undefined); }}
+                >
+                  {tab === 'ui' ? 'Editor' : 'YAML'}
+                </button>
+              ))}
+            </div>
+          </section>
+          {renderingViewMode === 'ui' ? (
+            <ReportDefinitionEditor
+              rawReport={cashflowReportYamlRaw}
+              idPrefix=""
+              onSave={async (data) => {
+                const r = await fetch('/api/cashflow-report/save', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ data }),
+                }).then((res) => res.json()) as { ok: boolean; error?: string };
+                if (!r.ok) throw new Error(r.error);
+              }}
+              onViewInYaml={(sectionId) => {
+                setRenderingViewMode('yaml');
+                setRenderingHighlightRef(sectionId);
+                setTimeout(() => {
+                  document.getElementById(`yaml-ref-${sectionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 50);
+              }}
+            />
+          ) : (
+            <section>
+              <YamlViewer
+                data={cashflowReportYamlRaw}
+                anchorRefs={new Set(((cashflowReportYamlRaw as { sections?: { id?: string }[] })?.sections ?? []).map(s => s.id ?? '').filter(Boolean))}
+                highlightRef={renderingHighlightRef}
+              />
+            </section>
+          )}
+        </>
+      )}
+
+      {appMode === 'financial-model' && currentSection === 'web' && (
+        <section>
+          <div className="ta-summary">
+            <span className="ta-name">Web View</span>
+            <span className="ta-total">
+              EBITDA ${(ebitdaTotal / 1e6).toFixed(1)}M · {store.scenarios.length} scenario{store.scenarios.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <ScenarioBar
+            scenarios={store.scenarios}
+            activeId={store.activeId}
+            onSwitch={switchScenario}
+            onNew={newScenario}
+            onRename={renameScenario}
+            onDelete={deleteScenario}
+            onResetActive={resetActiveScenario}
+          />
+          {evalError && (
+            <div className="model-error-banner" role="alert">
+              <span>
+                <strong>Model edits couldn't be applied:</strong> {evalError} — showing the base model.
+              </span>
+              <Button variant="outline" size="sm" onClick={clearFormulaOverrides}>Clear all model edits</Button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {appMode === 'financial-model' && currentSection === 'engine' && (
+        <EnginePreview
+          model={modelForView}
+          result={engineResult}
+          currentRef={engineRef}
+          onRefChange={setEngineRef}
+          onEdit={handleReportEdit}
+          editableSources={EDITABLE_SOURCES}
+          identityFor={(ref) => SOURCE_IDENTITY[ref] ?? []}
+          formulaEdit={{
+            overrides: formulaOverrides,
+            enabled: store.activeId === store.scenarios[0]?.id,
+            onSet: setFormula,
+            onReset: resetFormula,
+          }}
+          onApiSync={async (adapterName) => {
+            if (adapterName === 'hubspot_pipeline') {
+              await runHubSpotSync();
+            } else if (adapterName === 'xero_actuals' || adapterName === 'xero_cost_line') {
+              await runXeroSync();
+            } else {
+              throw new Error(`No sync handler for adapter "${adapterName}"`);
+            }
+          }}
+        />
+      )}
+
+      {appMode === 'financial-model' && currentSection === 'rendering' && (
+        <>
+          <section>
+            <div className="ta-summary">
+              <span className="ta-name">Rendering Engine</span>
+              <span className="ta-total">
+                {((reportYamlRaw as { tabs?: unknown[] })?.tabs ?? []).length} tabs ·{' '}
+                {((reportYamlRaw as { sections?: unknown[] })?.sections ?? []).length} sections
+              </span>
+            </div>
+            <p className="hint">
+              Report layout defined in <code>src/report/report.yaml</code>. Tabs reference sections by id; each section
+              contains an ordered list of blocks (tables, charts, titles) rendered in the web view.
+            </p>
+            <div className="engine-view-tabs">
+              {(['ui', 'yaml'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  className={`engine-view-tab-btn${renderingViewMode === tab ? ' is-active' : ''}`}
+                  onClick={() => { setRenderingViewMode(tab); if (tab !== 'yaml') setRenderingHighlightRef(undefined); }}
+                >
+                  {tab === 'ui' ? 'Editor' : 'YAML'}
+                </button>
+              ))}
+            </div>
+          </section>
+          {renderingViewMode === 'ui' ? (
+            <ReportDefinitionEditor
+              rawReport={reportYamlRaw}
+              idPrefix="yaml-"
+              onSave={async (data) => {
+                const r = await fetch('/api/report/save', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ data }),
+                }).then((res) => res.json()) as { ok: boolean; error?: string };
+                if (!r.ok) throw new Error(r.error);
+              }}
+              onViewInYaml={(sectionId) => {
+                setRenderingViewMode('yaml');
+                setRenderingHighlightRef(sectionId);
+                setTimeout(() => {
+                  document.getElementById(`yaml-ref-${sectionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 50);
+              }}
+            />
+          ) : (
+            <section>
+              <YamlViewer
+                data={reportYamlRaw}
+                anchorRefs={new Set(((reportYamlRaw as { sections?: { id?: string }[] })?.sections ?? []).map(s => s.id ?? '').filter(Boolean))}
+                highlightRef={renderingHighlightRef}
+              />
+            </section>
+          )}
+        </>
+      )}
+
+      {appMode === 'financial-model' && currentSection === 'web' && <div className="view-tabs" role="tablist">
         <button
           role="tab"
           aria-selected={view === 'model'}
@@ -391,18 +755,9 @@ export default function App() {
           Balance Sheet
           <span className="view-tab-sub">simplified</span>
         </button>
-        <button
-          role="tab"
-          aria-selected={view === 'engine'}
-          className={`view-tab ${view === 'engine' ? 'active' : ''}`}
-          onClick={() => setView('engine')}
-        >
-          Engine
-          <span className="view-tab-sub">declarative model</span>
-        </button>
-      </div>
+      </div>}
 
-      {view === 'model' ? (
+      {appMode === 'financial-model' && currentSection === 'web' && (view === 'model' ? (
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="revenue-model" onEdit={handleReportEdit} />
       ) : view === 'total' ? (
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="total-revenue" onEdit={handleReportEdit} />
@@ -427,71 +782,10 @@ export default function App() {
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="costs" onEdit={handleReportEdit} />
       ) : view === 'balance-sheet' ? (
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="balance-sheet" onEdit={handleReportEdit} />
-      ) : view === 'engine' ? (
-        <EnginePreview
-          model={modelForView}
-          result={engineResult}
-          currentRef={route.ref}
-          onRefChange={setEngineRef}
-          onEdit={handleReportEdit}
-          editableSources={EDITABLE_SOURCES}
-          identityFor={(ref) => SOURCE_IDENTITY[ref] ?? []}
-          formulaEdit={{
-            overrides: formulaOverrides,
-            enabled: store.activeId === store.scenarios[0]?.id,
-            onSet: setFormula,
-            onReset: resetFormula,
-          }}
-        />
       ) : (
         <EngineSection report={salesReport} evalResult={engineResult} model={salesModel} sectionId="budget" onEdit={handleReportEdit} />
-      )}
+      ))}
 
-      <footer className="app-footer">
-        <p>
-          Modeled from <code>5-year-plan.xlsx</code>. <strong>Revenue Model</strong> reproduces v4's modeled per-TA totals
-          exactly (e.g. Ophthalmology 2031 = $14,860,417 matches the Revenue Model auto sheet's row 83 sum to the cent).
-          <strong> HubSpot</strong> pipeline values come from the HubSpot Pivot tab and are now <em>allocated to TAs at sync
-          time</em> using deal-name regex rules editable on the HubSpot tab — default config catches every ophthalmology
-          term (WetAMD / GA / DME / DR / Glaucoma / cataract / OCT / fundus / retina / InSite) and routes all matching
-          deals to Ophthalmology. Add a rule (e.g. `\b(liver|mash|hepatic)\b` → "Hepatology") to fan deals out as new TAs
-          come online. <em>Per-(TA, month) manual revenue adjustments</em> on the Total Revenue tab reproduce v4's six 2026
-          Ophthalmology budget tweaks (Jan/Feb/Mar formula adds plus Oct/Nov/Dec hardcoded +$50k). With the defaults in
-          place, <strong>Total Revenue now matches v4 to the cent in every year 2026–2031.</strong> <strong>Employees</strong>: 48 people including 7 with end dates (Jonny / Daniella /
-          Tomike / Nikolas / Christopher / Ali / Lily — leaving Dec 2025 → May 2026), 5% inflation each April. Two v4
-          formula bugs are reproduced by default (toggle in the Employees assumptions): <code>maxInflationSteps=4</code>
-          (v4 skips the Apr 2031 step) and <code>inflateFutureHires=false</code> (v4 leaves future-start hires flat).
-          <strong> Modeller commission</strong> = <code>min(80% × AI revenue, $30k cap)</code> per TA per month, summed across
-          12 TAs — matches v4 to the cent in 2027 / 2029 / 2030 / 2031, off by $20k in 2028 due to spreadsheet formula
-          inconsistency (v4's row 304 sums B292:B295 in some columns and B292:B303 in others). <strong>Sales commission</strong>
-          = <code>min($6k × starts + 12% × revenue, 1.5 × Total Sales Salary)</code> where Total Sales Salary is the
-          sum of cap-eligible employees (David / Jonny / Muhammad / East+West Coast / Therapeutic 1+2) — matches v4
-          within 5% in all years. <strong>Balance Sheet</strong> derives every v4 line from the opening position
-          and monthly P&amp;L; opening values and AR/AP days are editable on the Balance Sheet tab.
-        </p>
-        <p>
-          <strong>Salary adjustments</strong>: v4's hand-edited per-cell salary tweaks (Naaman's ×0.8 from Apr 2026,
-          Blaise's ×0.66 from Apr 2026 then ×2.8052 from Apr 2027 tracking Naaman's salary) are now reproduced via a
-          sparse multiplier table editable on the Employees tab. Each row sets a factor on one employee's monthly cost
-          that carries forward until the next adjustment for the same employee. With the defaults in place, <strong>G&amp;A
-          / Engineering / Product Support staff costs now match v4 to the dollar in every year</strong> and yearly Total
-          Opex tracks v4 within $1 in 2028–2031.
-          <br /><br />
-          <strong>Sales commission</strong> is now overridden per-month from v4's hardcoded S&amp;M Commission line (every cell
-          in v4 is a pasted value — no formula at all). <strong>Modeller commission</strong> uses our `min(0.8 × AI revenue,
-          $30k cap)` per-TA formula plus four manual Jan/Feb/Mar/May 2026 historic-commitment entries. <strong>Depreciation</strong>
-          patches the Jan-Mar 2026 cells (v4 hardcodes Jan = `-256 × 1.32` = -$337.92 and leaves Feb/Mar empty, rather than pulling
-          from Capital Purchases). With all three in place, <strong>cost of sales now matches v4 to the cent in every year
-          except 2030 (-$5,000) and EBITDA matches to within $1 in 2027/2029/2031</strong>.
-          <br /><br />
-          Final piece: v4's G&amp;A Salaries Jan/Feb/Mar 2026 cells use formulas like `=Employees!L51-2642` (manual
-          actual-vs-modelled reconciliations subtracting $2,642 / $2,506 / $4,410). Pre-populated as G&amp;A staff actuals
-          for those three months, the per-dept totals auto-recompute (`staff_actual + non_staff_modelled +
-          derived_modelled`) and flow through Total Opex → EBITDA. <strong>Result: every Budget P&amp;L yearly line —
-          Revenue, Cost of Sales, Gross Profit, Total Opex, EBITDA — matches v4 to within $3 across all 6 years
-          (rounding noise on division and the cascading IF expressions).</strong>
-        </p>
-      </footer>
     </div>
   );
 }
@@ -500,13 +794,23 @@ interface HeaderMenuProps {
   onReset: () => void;
   onDownload: () => Promise<void> | void;
   onSync: () => Promise<string>;
+  onXeroSync: () => Promise<string>;
+  savedModels: SavedModel[];
+  onSaveCurrentModel: (name: string) => void;
+  onLoadModel: (model: SavedModel) => void;
+  onDeleteModel: (id: string) => void;
+  appMode: 'financial-model' | 'weekly-cashflow';
+  onSetAppMode: (mode: 'financial-model' | 'weekly-cashflow') => void;
 }
 
-function HeaderMenu({ onReset, onDownload, onSync }: HeaderMenuProps) {
+function HeaderMenu({ onReset, onDownload, onSync, onXeroSync, savedModels, onSaveCurrentModel, onLoadModel, onDeleteModel, appMode, onSetAppMode }: HeaderMenuProps) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [modelModalOpen, setModelModalOpen] = useState(false);
+  const [saveModelName, setSaveModelName] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const yamlRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -551,6 +855,64 @@ function HeaderMenu({ onReset, onDownload, onSync }: HeaderMenuProps) {
     setTimeout(() => setStatus(null), 8000);
   };
 
+  const handleXeroSync = async () => {
+    setOpen(false);
+    setStatus('Fetching Xero actuals…');
+    try {
+      setStatus(`Created scenario · ${await onXeroSync()}`);
+    } catch (err) {
+      setStatus(`Xero sync failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setStatus(null), 8000);
+  };
+
+  const handleYamlExport = async () => {
+    setOpen(false);
+    setStatus('Exporting YAMLs…');
+    try {
+      const res = await fetch('/api/yaml/export');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'model-config.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus('Exported model-config.zip');
+    } catch (err) {
+      setStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setStatus(null), 4000);
+  };
+
+  const handleYamlImportClick = () => {
+    setOpen(false);
+    yamlRef.current?.click();
+  };
+
+  const handleYamlImportChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setStatus(`Importing ${file.name}…`);
+    try {
+      const res = await fetch('/api/yaml/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/zip' },
+        body: file,
+      });
+      const data = await res.json() as { ok: boolean; written?: string[]; error?: string };
+      if (!data.ok) throw new Error(data.error);
+      const modelName = file.name.replace(/\.zip$/i, '');
+      onSaveCurrentModel(modelName);
+      setStatus(`Imported ${file.name} · saved as model "${modelName}"`);
+    } catch (err) {
+      setStatus(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setStatus(null), 5000);
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -573,22 +935,36 @@ function HeaderMenu({ onReset, onDownload, onSync }: HeaderMenuProps) {
   return (
     <div className="menu-wrap" ref={wrapRef}>
       {status && <span className="menu-status">{status}</span>}
-      <button
-        className="btn icon-btn"
+      <Button
+        size="icon"
+        variant="outline"
         aria-label="Menu"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
         ☰
-      </button>
+      </Button>
       {open && (
         <div className="menu-dropdown" role="menu">
+          <button role="menuitem" className="menu-item" onClick={() => { setOpen(false); setModelModalOpen(true); }}>
+            Load Model…
+          </button>
+          <div className="menu-separator" />
           <button role="menuitem" className="menu-item" onClick={handleSync}>
             Sync from HubSpot
           </button>
+          <button role="menuitem" className="menu-item" onClick={handleXeroSync}>
+            Sync Xero actuals
+          </button>
           <button role="menuitem" className="menu-item" onClick={handleDownload}>
             Download as Excel
+          </button>
+          <button role="menuitem" className="menu-item" onClick={handleYamlExport}>
+            Export config (YAML zip)
+          </button>
+          <button role="menuitem" className="menu-item" onClick={handleYamlImportClick}>
+            Import config (YAML zip)…
           </button>
           <button role="menuitem" className="menu-item" onClick={handleUploadClick}>
             Upload file…
@@ -598,11 +974,128 @@ function HeaderMenu({ onReset, onDownload, onSync }: HeaderMenuProps) {
           </button>
         </div>
       )}
+      <Modal open={modelModalOpen} onClose={() => setModelModalOpen(false)} title="Load Model" maxWidth={580}>
+        <div style={{ padding: '16px 24px 24px' }}>
+
+          {/* ── Built-in models ── */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+              Models
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <tbody>
+                {([
+                  { id: 'financial-model' as const, name: 'Bitfount v4 Financial Model', desc: 'Monthly P&L, balance sheet, scenario modelling' },
+                  { id: 'weekly-cashflow' as const, name: 'Weekly Cashflow', desc: '98-week cash forecast — inflows, outflows, bank reconciliation' },
+                ] as Array<{ id: 'financial-model' | 'weekly-cashflow'; name: string; desc: string }>).map((m) => (
+                  <tr key={m.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '10px 8px' }}>
+                      <div style={{ fontSize: 13, fontWeight: appMode === m.id ? 700 : 400 }}>
+                        {m.name}
+                        {appMode === m.id && <span style={{ marginLeft: 8, fontSize: 10, background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: 10, fontWeight: 500 }}>active</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{m.desc}</div>
+                    </td>
+                    <td style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <Button
+                        variant={appMode === m.id ? 'default' : 'outline'}
+                        size="sm"
+                        disabled={appMode === m.id}
+                        onClick={() => { onSetAppMode(m.id); setModelModalOpen(false); }}
+                      >
+                        {appMode === m.id ? 'Loaded' : 'Load'}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* ── User snapshots (financial model only) ── */}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+              Saved Snapshots (Financial Model)
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input
+                type="text"
+                placeholder="Name for current model state…"
+                value={saveModelName}
+                onChange={(e) => setSaveModelName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && saveModelName.trim()) {
+                    onSaveCurrentModel(saveModelName.trim());
+                    setSaveModelName('');
+                  }
+                }}
+                style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13 }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!saveModelName.trim()}
+                onClick={() => { onSaveCurrentModel(saveModelName.trim()); setSaveModelName(''); }}
+              >
+                Save current
+              </Button>
+            </div>
+            {savedModels.length === 0 ? (
+              <p className="hint" style={{ margin: 0 }}>No snapshots yet — type a name above and click Save current to capture the current scenarios and formula overrides.</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500, fontSize: 12, color: '#888' }}>Name</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', fontWeight: 500, fontSize: 12, color: '#888' }}>Saved</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {savedModels.map((model) => (
+                    <tr key={model.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: '8px 8px', fontSize: 13 }}>{model.name}</td>
+                      <td style={{ padding: '8px 8px', fontSize: 12, color: '#999', whiteSpace: 'nowrap' }}>
+                        {new Date(model.savedAt).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '8px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { onLoadModel(model); onSetAppMode('financial-model'); setModelModalOpen(false); }}
+                          >
+                            Load
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onDeleteModel(model.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+            </table>
+          )}
+          </div>
+        </div>
+      </Modal>
       <input
         ref={fileRef}
         type="file"
         style={{ display: 'none' }}
         onChange={handleFileChange}
+      />
+      <input
+        ref={yamlRef}
+        type="file"
+        accept=".zip"
+        style={{ display: 'none' }}
+        onChange={handleYamlImportChange}
       />
     </div>
   );
@@ -660,9 +1153,9 @@ function HubSpotView({ input, engineResult, hubspotTotal, updateHubSpotSync, onS
           HubSpot section of the model. Edits here re-run only on next Sync.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-          <button className="btn" onClick={handleSync} disabled={syncing}>
+          <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
             {syncing ? 'Syncing…' : 'Sync from HubSpot'}
-          </button>
+          </Button>
           {syncMsg && <span className="hint" style={{ margin: 0 }}>{syncMsg}</span>}
         </div>
         {lastSyncMeta && (
@@ -912,9 +1405,9 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
           <span className="ta-name">HubSpot Deals</span>
         </div>
         <p className="hint">No sync data yet. Click Sync to fetch deals from HubSpot.</p>
-        <button className="btn" onClick={handleSync} disabled={syncing}>
+        <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
           {syncing ? 'Syncing…' : 'Sync from HubSpot'}
-        </button>
+        </Button>
       </section>
     );
   }
@@ -1265,7 +1758,7 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
               high-level revenue type and bucketed by the deal's predicted close quarter.
             </p>
           </div>
-          <button className="btn" onClick={() => setOpenModal('current')}>Show raw data</button>
+          <Button variant="outline" size="sm" onClick={() => setOpenModal('current')}>Show raw data</Button>
         </div>
         <StackedBarChart pivot={currentPipe} />
       </section>
@@ -1282,7 +1775,7 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
               excluded (0%). Represents the forecast booking by quarter.
             </p>
           </div>
-          <button className="btn" onClick={() => setOpenModal('expected')}>Show raw data</button>
+          <Button variant="outline" size="sm" onClick={() => setOpenModal('expected')}>Show raw data</Button>
         </div>
         <StackedBarChart pivot={expectedClose} />
       </section>
@@ -1311,12 +1804,12 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
         </span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 12px' }}>
-        <button className="btn" onClick={handleSync} disabled={syncing}>
+        <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
           {syncing ? 'Syncing…' : 'Re-sync'}
-        </button>
-        <button className="btn" onClick={downloadExcel} disabled={deals.length === 0}>
+        </Button>
+        <Button variant="outline" size="sm" onClick={downloadExcel} disabled={deals.length === 0}>
           Download Excel
-        </button>
+        </Button>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className="hint" style={{ margin: 0 }}>Show:</span>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
@@ -1342,37 +1835,24 @@ function HubSpotDealsView({ lastSyncMeta, onSync }: HubSpotDealsViewProps) {
           )}
         </label>
         <div role="tablist" style={{ display: 'flex', gap: 0, marginLeft: 'auto' }}>
-          <button
+          <Button
             role="tab"
             aria-selected={view === 'deals'}
-            className="btn"
+            variant={view === 'deals' ? 'default' : 'outline'}
+            size="sm"
             onClick={() => setView('deals')}
-            style={{
-              borderTopRightRadius: 0,
-              borderBottomRightRadius: 0,
-              fontWeight: view === 'deals' ? 600 : 400,
-              background: view === 'deals' ? 'var(--accent)' : undefined,
-              color: view === 'deals' ? 'white' : undefined,
-            }}
           >
             Deals
-          </button>
-          <button
+          </Button>
+          <Button
             role="tab"
             aria-selected={view === 'pricing'}
-            className="btn"
+            variant={view === 'pricing' ? 'default' : 'outline'}
+            size="sm"
             onClick={() => setView('pricing')}
-            style={{
-              borderTopLeftRadius: 0,
-              borderBottomLeftRadius: 0,
-              borderLeft: 'none',
-              fontWeight: view === 'pricing' ? 600 : 400,
-              background: view === 'pricing' ? 'var(--accent)' : undefined,
-              color: view === 'pricing' ? 'white' : undefined,
-            }}
           >
             Pricing
-          </button>
+          </Button>
         </div>
         <span className="hint" style={{ margin: 0 }}>
           Last sync: {new Date(lastSyncMeta.fetchedAt).toLocaleString()}

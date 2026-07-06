@@ -18,7 +18,6 @@
       "department": "S&M",
       "location": "UK",
       "startDate": "Current",
-      "endDate": "2026-04",
       "salary": 105600,
       "salesCapEligible": true
     },
@@ -128,7 +127,6 @@
       "department": "G&A",
       "location": "UK",
       "startDate": "Current",
-      "endDate": "2026-05",
       "salary": 108847.25280000002,
       "salesCapEligible": false
     },
@@ -227,7 +225,6 @@
       "department": "Engineering",
       "location": "UK",
       "startDate": "Current",
-      "endDate": "2026-05",
       "salary": 147180.0528,
       "salesCapEligible": false
     },
@@ -249,7 +246,6 @@
       "department": "Engineering",
       "location": "UK",
       "startDate": "Current",
-      "endDate": "2025-12",
       "salary": 129162.05280000002,
       "salesCapEligible": false
     },
@@ -260,7 +256,6 @@
       "department": "Engineering",
       "location": "UK",
       "startDate": "Current",
-      "endDate": "2026-03",
       "salary": 112199.9472,
       "salesCapEligible": false
     },
@@ -282,7 +277,6 @@
       "department": "Engineering",
       "location": "UK",
       "startDate": "Current",
-      "endDate": "2026-04",
       "salary": 124079.9472,
       "salesCapEligible": false
     },
@@ -315,7 +309,6 @@
       "department": "Engineering",
       "location": "UK",
       "startDate": "Current",
-      "endDate": "2026-05",
       "salary": 99000,
       "salesCapEligible": false
     },
@@ -425,7 +418,6 @@
       "department": "Product Support",
       "location": "UK",
       "startDate": "Current",
-      "endDate": "2026-05",
       "salary": 138598.73280000003,
       "salesCapEligible": false
     },

@@ -155,6 +155,20 @@ const SCHEMAS = {
     ],
   } satisfies TableSchema,
 
+  // ── Per-cost-line-item actuals from Xero ──
+  // Sparse: only rows where Xero provided an actual. Joined against
+  // cost_line_items_t on (dept, line_name, month_idx) to apply fine-grained
+  // overrides. `line_name` comes from the Xero account name — model line names
+  // should match for the override to apply.
+  cost_line_actuals: {
+    columns: [
+      { name: 'dept', type: 'string' as const },
+      { name: 'line_name', type: 'string' as const },
+      { name: 'month_idx', type: 'number' as const },
+      { name: 'actual_value', type: 'number' as const, description: 'Xero actual (replaces modeled value when present)' },
+    ],
+  } satisfies TableSchema,
+
   // ── Balance Sheet opening position (single row) ──
   // Values come from the v4 "All In One" / "Balance Sheet" sheets — the opening
   // position at the start of the modeling horizon. Liabilities (creditors,
@@ -467,15 +481,14 @@ export function flattenModelInput(input: ModelInput): FlattenedInput {
 
   // ─── hubspot pipeline (TA × line_item × month) ───
   // Emit from byTALineItems (one row per (ta, line_item, month_idx) cell) so
-  // each pipeline dollar carries the TA it was allocated to. The legacy
-  // `input.hubspot.lineItems` field is the cross-TA sum and is *not* used
-  // here — it stays in `HubSpotData` only for backward compatibility with
-  // existing UIs that haven't been updated.
+  // each pipeline dollar carries the TA it was allocated to. Month 0 is always
+  // emitted for every (ta, line_item) — even when value is zero — so every TA
+  // appears visibly in the engine explorer before a HubSpot sync.
   const hsRows: Row[] = [];
   for (const [ta, byLine] of Object.entries(input.hubspot.byTALineItems)) {
     for (const [name, arr] of Object.entries(byLine)) {
       arr.forEach((value, i) => {
-        if (value !== 0) hsRows.push({ ta, line_item: name, month_idx: i, value });
+        if (value !== 0 || i === 0) hsRows.push({ ta, line_item: name, month_idx: i, value });
       });
     }
   }
@@ -656,6 +669,20 @@ export function flattenModelInput(input: ModelInput): FlattenedInput {
     schema: SCHEMAS.employee_factors,
     rows: factorRows,
   };
+
+  // ─── per-cost-line actuals overlay ───
+  // Expand costLineMonthly (keyed by "dept|line_name") into a sparse flat table.
+  const costLineRows: Row[] = [];
+  for (const [key, byMonth] of Object.entries(input.actuals.costLineMonthly ?? {})) {
+    const sep = key.indexOf('|');
+    if (sep === -1) continue;
+    const dept = key.slice(0, sep);
+    const line_name = key.slice(sep + 1);
+    for (const [mStr, actual_value] of Object.entries(byMonth)) {
+      costLineRows.push({ dept, line_name, month_idx: Number(mStr), actual_value });
+    }
+  }
+  tables.cost_line_actuals_t = { schema: SCHEMAS.cost_line_actuals, rows: costLineRows };
 
   // ─── actuals overlays (monthly) ───
   // For each month_idx 0..71, emit one row with overrides where present and

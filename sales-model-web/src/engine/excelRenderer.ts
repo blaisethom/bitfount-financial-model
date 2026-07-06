@@ -123,12 +123,12 @@ export function renderStepAsSheet(
 ): SheetEmission {
   const input = context.sheets[step.input];
   // Fallback for any unsupported case: write values.
-  if (!input) return renderTableAsValueSheet(wb, step.output, output);
+  if (!input) return renderTableAsValueSheet(wb, step.id, output);
 
   switch (step.op.op) {
     case 'map':       return renderMap(wb, step, output, input);
-    case 'select':    return renderSelectOrRename(wb, step.output, output, input);
-    case 'rename':    return renderSelectOrRename(wb, step.output, output, input);
+    case 'select':    return renderSelectOrRename(wb, step.id, output, input);
+    case 'rename':    return renderSelectOrRename(wb, step.id, output, input);
     case 'groupBy':   return renderGroupBy(wb, step, output, input);
     case 'window':    return renderWindow(wb, step, output, input);
     case 'join':      return renderJoin(wb, step, output, input, context);
@@ -136,7 +136,7 @@ export function renderStepAsSheet(
     case 'limit':
     case 'union':
     case 'filter':
-    default:          return renderTableAsValueSheet(wb, step.output, output);
+    default:          return renderTableAsValueSheet(wb, step.id, output);
   }
 }
 
@@ -148,7 +148,7 @@ function renderMap(
   output: Table,
   input: SheetEmission,
 ): SheetEmission {
-  const sheet = wb.addWorksheet(escapeSheetName(step.output));
+  const sheet = wb.addWorksheet(escapeSheetName(step.id));
   const columnMap = writeHeader(sheet, output);
   const mapOp = step.op as Extract<TableOp, { op: 'map' }>;
   const inMap = inputColumnMap(input);
@@ -208,7 +208,7 @@ function renderGroupBy(
   output: Table,
   input: SheetEmission,
 ): SheetEmission {
-  const sheet = wb.addWorksheet(escapeSheetName(step.output));
+  const sheet = wb.addWorksheet(escapeSheetName(step.id));
   const columnMap = writeHeader(sheet, output);
   const gb = step.op as Extract<TableOp, { op: 'groupBy' }>;
 
@@ -216,7 +216,7 @@ function renderGroupBy(
   for (const k of gb.keys) {
     if (!input.columnMap[k]) {
       // key col not on input — fall back to values
-      return renderTableAsValueSheet(wb, step.output, output);
+      return renderTableAsValueSheet(wb, step.id, output);
     }
   }
 
@@ -292,7 +292,7 @@ function renderWindow(
   output: Table,
   input: SheetEmission,
 ): SheetEmission {
-  const sheet = wb.addWorksheet(escapeSheetName(step.output));
+  const sheet = wb.addWorksheet(escapeSheetName(step.id));
   const columnMap = writeHeader(sheet, output);
   const winOp = step.op as Extract<TableOp, { op: 'window' }>;
 
@@ -355,9 +355,9 @@ function renderJoin(
   const right = context.sheets[joinOp.right];
   // Multi-key joins or cross joins → values
   if (!right || joinOp.on.length !== 1 || joinOp.type === 'cross') {
-    return renderTableAsValueSheet(wb, step.output, output);
+    return renderTableAsValueSheet(wb, step.id, output);
   }
-  const sheet = wb.addWorksheet(escapeSheetName(step.output));
+  const sheet = wb.addWorksheet(escapeSheetName(step.id));
   const columnMap = writeHeader(sheet, output);
   const j = joinOp.on[0];
   const rightKeyRange = inputRange(right, j.right);
@@ -414,7 +414,7 @@ export function renderModelToWorkbook(
   // Steps in declared order
   for (const { step, output } of evalResult.trace) {
     const emission = renderStepAsSheet(wb, step, output, context);
-    context.sheets[step.output] = emission;
+    context.sheets[step.id] = emission;
   }
 
   return context;

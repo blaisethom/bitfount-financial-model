@@ -1,14 +1,79 @@
-html,
-body {
-  margin: 0;
-  padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
-  background: #fafafa;
-  color: #111827;
+@import "tailwindcss";
+
+/* ─── Design tokens ─────────────────────────────────────────────────────────
+   Exposed as CSS custom properties so inline JS styles can reference them
+   (var(--accent), var(--muted), etc.) and also as Tailwind utilities via
+   @theme (bg-accent, text-muted, border-border, etc.).
+────────────────────────────────────────────────────────────────────────────── */
+@theme {
+  --color-accent:       #2563eb;
+  --color-accent-light: #dbeafe;
+  --color-muted:        #6b7280;
+  --color-app-bg:       #fafafa;
+  --color-app-border:   #e5e7eb;
+  --color-app-text:     #111827;
+  --color-card:         #ffffff;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-#root {
-  width: 100%;
-  min-height: 100vh;
+/* ─── shadcn/ui tokens (HSL channel values, no hsl() wrapper) ──────────────
+   Components reference these as hsl(var(--primary)) etc.
+   Mapped to match the existing blue accent palette.
+────────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 222 47% 7%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 7%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 7%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 94%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+  }
 }
+
+/* ─── shadcn base reset ─────────────────────────────────────────────────── */
+@layer base {
+  * { border-color: hsl(var(--border)); }
+  body { background-color: hsl(var(--background)); color: hsl(var(--foreground)); }
+}
+
+/* Keep legacy variable names so existing inline styles (var(--accent) etc.)
+   continue to work without touching every component file. */
+:root {
+  --bg:           #fafafa;
+  --card:         #fff;
+  --border:       #e5e7eb;
+  --text:         #111827;
+  --muted:        #6b7280;
+  --accent:       #2563eb;
+  --accent-light: #dbeafe;
+}
+
+/* Base */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  background: theme(colors.app-bg);
+  color: theme(colors.app-text);
+  font-family: theme(fontFamily.sans);
+  font-size: 14px;
+}
+
+#root { width: 100%; min-height: 100vh; }

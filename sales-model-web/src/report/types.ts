@@ -8,7 +8,7 @@
 // once (typically as hidden helper sheets in Excel) and emit cross-sheet
 // formulas so edits to the engine inputs flow through to the report views.
 
-export type CellFormat = 'money' | 'count' | 'integer' | 'percent' | 'text';
+export type CellFormat = 'money' | 'count' | 'integer' | 'decimal' | 'percent' | 'text';
 
 export interface ColumnSpec {
   /** Column name in the engine table. */
@@ -54,7 +54,7 @@ export interface AxisSpec {
  */
 export type RowsSpec =
   | { kind: 'value-columns'; rows: ColumnSpec[] }
-  | { kind: 'table-rows'; labelCol: string; labelHeader?: string }
+  | { kind: 'table-rows'; labelCol: string; labelHeader?: string; columnFormats?: Record<string, CellFormat> }
   | {
       kind: 'pivot-rows';
       labelCol: string;
@@ -181,7 +181,14 @@ export interface SpacerBlock {
   rows?: number;
 }
 
-export type ReportBlock = TableBlock | TitleBlock | ParagraphBlock | SpacerBlock;
+export interface ChartBlock {
+  kind: 'chart';
+  /** Engine step-output ref — or the special value `staff-headcount` for the roster-derived headcount chart. */
+  ref: string;
+  title?: string;
+}
+
+export type ReportBlock = TableBlock | TitleBlock | ParagraphBlock | SpacerBlock | ChartBlock;
 
 export interface ReportSection {
   /** Stable identifier; used for hash-route navigation in the web renderer. */
@@ -190,6 +197,12 @@ export interface ReportSection {
   label: string;
   /** Optional one-line description. */
   hint?: string;
+  /**
+   * Primary engine ref for this section — the step output or source that best
+   * represents it. Used to build deeplinks from the layout editor back to the
+   * Engine explorer.
+   */
+  engineRef?: string;
   blocks: ReportBlock[];
 }
 
