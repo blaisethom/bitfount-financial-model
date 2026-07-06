@@ -356,7 +356,13 @@ export default function App() {
       if (!data.ok) throw new Error(data.error);
       setSyncPill('Building actuals…');
       const { buildActualsFromXero } = await import('./xero');
-      const { actuals, summary: xeroSummary } = buildActualsFromXero(data, input.dates);
+      const { actuals: xeroActuals, summary: xeroSummary } = buildActualsFromXero(data, input.dates);
+      // Merge bsMonthly: existing manual overrides win for months Xero didn't return data for;
+      // Xero bank balances win when present (they have real values).
+      const actuals = {
+        ...xeroActuals,
+        bsMonthly: { ...input.actuals.bsMonthly, ...xeroActuals.bsMonthly },
+      };
       const syncedInput = { ...input, actuals };
       const id = newId();
       const syncDate = new Date().toISOString().slice(0, 10);

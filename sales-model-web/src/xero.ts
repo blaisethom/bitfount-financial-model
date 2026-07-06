@@ -23,6 +23,12 @@ export interface XeroSyncSuccess {
   monthly: Record<string, Record<string, number>>;
   /** Account code → {name, type, class} metadata from Xero. */
   accounts: Record<string, { name: string; type: string; class: string }>;
+  /**
+   * Total bank account balance per completed month from the Xero BalanceSheet
+   * report (YYYY-MM → USD equivalent). Parsed from the "Bank" section;
+   * empty object if the balance sheet fetch failed.
+   */
+  bankBalances: Record<string, number>;
 }
 
 export interface XeroSyncFailure {
@@ -83,7 +89,7 @@ export interface XeroActualsResult {
  * Revenue and COS are set from ACCREC/ACCPAY invoice line amounts.
  * Dept nonStaff overrides are set from ACCPAY expense account codes.
  * Staff costs (payroll) are NOT overridden — they require the Payroll API.
- * BS overrides are NOT set — invoices don't carry balance sheet state.
+ * Cash is set from the BalanceSheet bank totals when available.
  * ebitda is deliberately omitted so the model derives it from the overridden
  * grossProfit − totalOpex.
  */
@@ -159,10 +165,18 @@ export function buildActualsFromXero(
     );
   }
 
+  // Populate cash actuals from the BalanceSheet bank balances.
+  const bsMonthly: Actuals['bsMonthly'] = {};
+  for (const [yyyymm, balance] of Object.entries(data.bankBalances ?? {})) {
+    const monthIdx = modelDates.indexOf(yyyymm);
+    if (monthIdx === -1) continue;
+    bsMonthly[monthIdx] = { cash: round2(balance) };
+  }
+
   const actuals: Actuals = {
     pnlMonthly,
     costDeptMonthly,
-    bsMonthly: {},
+    bsMonthly,
     costLineMonthly,
   };
 
@@ -172,7 +186,8 @@ export function buildActualsFromXero(
   const pnlCount = Object.keys(pnlMonthly).length;
   const deptMonths = depts.reduce((n, d) => n + Object.keys(costDeptMonthly[d]).length, 0);
   const lineCount = Object.keys(costLineMonthly).length;
-  const summary = `${pnlCount} revenue/COS months · ${deptMonths} dept cost months · ${lineCount} cost line accounts (${range})`;
+  const cashMonths = Object.keys(bsMonthly).length;
+  const summary = `${pnlCount} revenue/COS months · ${deptMonths} dept cost months · ${lineCount} cost line accounts · ${cashMonths} cash balance${cashMonths !== 1 ? 's' : ''} (${range})`;
 
   return { actuals, summary, months: data.completedMonths };
 }

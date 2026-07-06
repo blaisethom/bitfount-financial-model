@@ -291,6 +291,93 @@ function xeroPlugin(): Plugin {
             fetchAllInvoices(ltdFetch, GBP_USD),
           ])
 
+          // ── Bank balances from Xero BalanceSheet report ──────────────────
+          //
+          // `Reports/BalanceSheet?timeframe=MONTH&periods=N` returns N+1
+          // column headers (label + N months, newest first). We parse the
+          // "Bank" section's SummaryRow to get total bank balance per month.
+          // Failures are non-fatal — invoices still populate P&L data.
+
+          type BSCell = { Value?: string }
+          type BSRow = { RowType?: string; Title?: string; Cells?: BSCell[]; Rows?: BSRow[] }
+          type BSResp = { Reports?: Array<{ Rows?: BSRow[] }> }
+
+          function parseMonthLabel(s: string): string | null {
+            const SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            const m = /(\w{3,})\s+(\d{4})/.exec(s)
+            if (!m) return null
+            const mo = SHORT.findIndex(x => m[1].slice(0,3) === x) + 1
+            return mo > 0 ? `${m[2]}-${String(mo).padStart(2,'0')}` : null
+          }
+
+          // Recursively collect amounts from Row items inside any section
+          // whose Title is "Bank" (case-insensitive). Uses individual Row
+          // values rather than SummaryRow to avoid double-counting when bank
+          // accounts are spread across sub-sections.
+          function collectBankRows(
+            rows: BSRow[],
+            colMonths: (string|null)[],
+            fxRate: number,
+            inBank = false,
+          ): Record<string,number> {
+            const out: Record<string,number> = {}
+            for (const row of rows) {
+              const title = (row.Title ?? '').trim()
+              const nowInBank = inBank || /^bank$/i.test(title)
+              if (row.Rows) {
+                const sub = collectBankRows(row.Rows, colMonths, fxRate, nowInBank)
+                for (const [k, v] of Object.entries(sub)) out[k] = (out[k] ?? 0) + v
+              }
+              if (nowInBank && !inBank) continue // don't double-count section header cells
+              if (inBank && row.RowType === 'Row' && row.Cells) {
+                for (let i = 1; i < row.Cells.length; i++) {
+                  const month = colMonths[i]
+                  if (!month) continue
+                  const val = parseFloat((row.Cells[i]?.Value ?? '').replace(/,/g, ''))
+                  if (!isNaN(val)) out[month] = (out[month] ?? 0) + val * fxRate
+                }
+              }
+            }
+            return out
+          }
+
+          async function fetchBankBalances(
+            fetchFn: (path: string) => Promise<unknown>,
+            fxRate: number,
+          ): Promise<Record<string,number>> {
+            if (completedMonths.length === 0) return {}
+            const lastMonth = completedMonths[completedMonths.length - 1]
+            const [y, mo] = lastMonth.split('-').map(Number)
+            const lastDay = new Date(y, mo, 0).getDate()
+            const dateParam = `${lastMonth}-${String(lastDay).padStart(2,'0')}`
+            const periods = completedMonths.length - 1
+
+            const resp = await fetchFn(
+              `/api.xro/2.0/Reports/BalanceSheet?date=${dateParam}&periods=${periods}&timeframe=MONTH&paymentsOnly=false`,
+            ) as BSResp
+
+            const rows = resp.Reports?.[0]?.Rows ?? []
+            const headerRow = rows.find(r => r.RowType === 'Header')
+            if (!headerRow?.Cells) return {}
+
+            const colMonths = headerRow.Cells.map((c, i) =>
+              i === 0 ? null : parseMonthLabel(c.Value ?? ''),
+            )
+            return collectBankRows(rows, colMonths, fxRate)
+          }
+
+          const bankBalances: Record<string, number> = {}
+          try {
+            const [incBank, ltdBank] = await Promise.all([
+              fetchBankBalances(incFetch, 1.0),
+              fetchBankBalances(ltdFetch, GBP_USD),
+            ])
+            for (const [k, v] of Object.entries(incBank)) bankBalances[k] = (bankBalances[k] ?? 0) + v
+            for (const [k, v] of Object.entries(ltdBank)) bankBalances[k] = (bankBalances[k] ?? 0) + v
+          } catch (_err) {
+            // Balance sheet fetch is best-effort; invoice data still returned
+          }
+
           res.statusCode = 200
           res.setHeader('content-type', 'application/json')
           res.end(JSON.stringify({
@@ -300,6 +387,7 @@ function xeroPlugin(): Plugin {
             completedMonths,
             monthly,
             accounts,
+            bankBalances,
           }))
         } catch (err) {
           res.statusCode = 500
