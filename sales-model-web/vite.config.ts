@@ -195,21 +195,33 @@ function xeroPlugin(): Plugin {
         try {
           const GBP_USD = 1.27
 
+          const disconnectedOrgs: string[] = []
+
+          // Returns {} (empty) when the token key isn't configured in prokura
+          // (AuthenticationUnsuccessful), letting callers treat the org as missing.
+          // Throws on any other error so real failures still surface.
           const xeroFetch =
-            (tokenKey: string) =>
+            (tokenKey: string, orgName?: string) =>
             async (path: string): Promise<unknown> => {
               const r = await fetch(`https://api.xero.com${path}`, {
                 headers: { Authorization: `Bearer ${tokenKey}`, Accept: 'application/json' },
               })
               if (!r.ok) {
                 const body = await r.text()
+                if (body.includes('"AuthenticationUnsuccessful"')) {
+                  if (orgName && !disconnectedOrgs.includes(orgName)) disconnectedOrgs.push(orgName)
+                  return {}
+                }
                 throw new Error(`Xero ${path.split('?')[0]} → HTTP ${r.status}: ${body.slice(0, 300)}`)
               }
               return r.json()
             }
 
-          const incFetch = xeroFetch('XERO_TOKEN_BITFOUNT_INC')
-          const ltdFetch = xeroFetch('XERO_TOKEN_BITFOUNT_LIMITED')
+          // XERO_TOKEN_BITFOUNT_INC / XERO_TOKEN_BITFOUNT_LIMITED are the legacy per-org
+          // token keys. If only the unified XERO_TOKEN (Ltd) is configured in prokura,
+          // incFetch calls return {} gracefully and Inc data is omitted from the sync.
+          const incFetch = xeroFetch('XERO_TOKEN_BITFOUNT_INC', 'Inc')
+          const ltdFetch = xeroFetch('XERO_TOKEN_BITFOUNT_LIMITED', 'Ltd')
 
           // Completed months: Jan 2026 → last complete calendar month
           const today = new Date()
@@ -375,6 +387,56 @@ function xeroPlugin(): Plugin {
             return out
           }
 
+          // Strategy 3 (fallback): derive monthly end-of-month bank balance by summing
+          // all BankTransactions since account inception. Used when the BalanceSheet
+          // report returns 401 (missing accounting.reports.balancesheet.read scope).
+          // Amounts are already in the org's base currency (GBP for Ltd, USD for Inc),
+          // so applying fxRate at the end gives USD.
+          // Accuracy note: assumes Xero's BankTransactions contain the complete history
+          // including any opening-balance entries. Pagination limit: 50 pages (5000 txns).
+          async function fetchBankBalancesFromTxns(
+            fetchFn: (path: string) => Promise<unknown>,
+            fxRate: number,
+          ): Promise<{ balances: Record<string, number>; strategy: string }> {
+            type BankTxn = {
+              DateString?: string; Type?: string; Total?: number; Status?: string
+            }
+            type BankTxnsResp = { BankTransactions?: BankTxn[] }
+
+            const allTxns: BankTxn[] = []
+            for (let page = 1; page <= 50; page++) {
+              const data = (await fetchFn(`/api.xro/2.0/BankTransactions?page=${page}`)) as BankTxnsResp
+              const txns = data.BankTransactions ?? []
+              if (txns.length === 0) break
+              allTxns.push(...txns)
+              if (txns.length < 100) break
+            }
+
+            if (allTxns.length === 0) return { balances: {}, strategy: 'txn:empty' }
+
+            // Sort ascending and build cumulative running balance.
+            // Record the running total after the last transaction in each month.
+            allTxns.sort((a, b) => (a.DateString ?? '').localeCompare(b.DateString ?? ''))
+            let running = 0
+            const lastKnown: Record<string, number> = {}
+            for (const t of allTxns) {
+              if (t.Status === 'DELETED') continue
+              const amt = t.Total ?? 0
+              running += t.Type?.startsWith('SPEND') ? -amt : amt
+              const month = (t.DateString ?? '').slice(0, 7)
+              if (month) lastKnown[month] = running
+            }
+
+            // For each completed month, carry forward the last known balance.
+            const balances: Record<string, number> = {}
+            let carry = 0
+            for (const month of completedMonths) {
+              if (lastKnown[month] !== undefined) carry = lastKnown[month]
+              if (carry !== 0) balances[month] = Math.round(carry * fxRate * 100) / 100
+            }
+            return { balances, strategy: `txn:${allTxns.length}` }
+          }
+
           async function fetchBankBalances(
             fetchFn: (path: string) => Promise<unknown>,
             fxRate: number,
@@ -387,9 +449,22 @@ function xeroPlugin(): Plugin {
             // Xero periods param: 1–11; 0 = current period only (same as 1)
             const periods = Math.min(Math.max(completedMonths.length - 1, 1), 11)
 
-            const resp = await fetchFn(
-              `/api.xro/2.0/Reports/BalanceSheet?date=${dateParam}&periods=${periods}&timeframe=MONTH`,
-            ) as BSResp
+            let resp: BSResp
+            try {
+              resp = await fetchFn(
+                `/api.xro/2.0/Reports/BalanceSheet?date=${dateParam}&periods=${periods}&timeframe=MONTH`,
+              ) as BSResp
+            } catch (err) {
+              // BalanceSheet needs accounting.reports.balancesheet.read. If the current
+              // token predates that scope being added to prokura, fall back to summing
+              // BankTransactions. Re-authorize Xero in the prokura dashboard to restore
+              // the primary strategy.
+              const msg = err instanceof Error ? err.message : String(err)
+              if (msg.includes('HTTP 401')) {
+                return fetchBankBalancesFromTxns(fetchFn, fxRate)
+              }
+              throw err
+            }
 
             const rows = resp.Reports?.[0]?.Rows ?? []
             if (!rows.length) return { balances: {}, strategy: 'empty report' }
@@ -430,7 +505,8 @@ function xeroPlugin(): Plugin {
             for (const [k, v] of Object.entries(ltdResult.balances)) bankBalances[k] = (bankBalances[k] ?? 0) + v
             bankBalancesNote = `inc:${incResult.strategy} ltd:${ltdResult.strategy}`
           } catch (bankErr) {
-            bankBalancesNote = `error: ${bankErr instanceof Error ? bankErr.message : String(bankErr)}`
+            const errMsg = bankErr instanceof Error ? bankErr.message : String(bankErr)
+            bankBalancesNote = `error: ${errMsg}`
           }
 
           res.statusCode = 200
@@ -444,6 +520,7 @@ function xeroPlugin(): Plugin {
             accounts,
             bankBalances,
             bankBalancesNote,
+            disconnectedOrgs: disconnectedOrgs.length > 0 ? disconnectedOrgs : undefined,
           }))
         } catch (err) {
           res.statusCode = 500

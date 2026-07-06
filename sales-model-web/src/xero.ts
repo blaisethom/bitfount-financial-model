@@ -31,6 +31,8 @@ export interface XeroSyncSuccess {
   bankBalances: Record<string, number>;
   /** Diagnostic note explaining which parse strategy was used or any error. */
   bankBalancesNote?: string;
+  /** Org names whose prokura token key was not found (needs re-connecting in prokura). */
+  disconnectedOrgs?: string[];
 }
 
 export interface XeroSyncFailure {

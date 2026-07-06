@@ -19,7 +19,7 @@
 // so the Excel renderer can emit the same logic as formulas.
 
 import {
-  defineModel, manual, apiSource, sequence, step, ops, agg,
+  defineModel, literal, manual, apiSource, sequence, step, ops, agg,
   col, lit, add, sub, mul, div, lt, le, ge, eq, ne, and, or, iff, min as minFn, max as maxFn, pow,
   year, month, floor, mod, concat, coalesce,
 } from '../engine';
@@ -272,6 +272,17 @@ export const salesModel = defineModel({
         '"Sync from Xero" — stored in `ModelInput.actuals.costLineMonthly`. ' +
         'line_name should match the Xero account name for the override to apply. ' +
         'Joined with cost_line_items_t — Xero actual replaces modeled value when present.',
+    }),
+    cash_projection_anchor_null_t: literal({
+      schema: { columns: [
+        { name: 'last_actual_cash', type: 'number' },
+        { name: 'last_formula_cash', type: 'number' },
+      ]},
+      rows: [{ last_actual_cash: null, last_formula_cash: null }],
+      description:
+        'Single-row null fallback used when no cash actuals are present. ' +
+        'Unioned with the real anchor before the cross-join so the cross-join ' +
+        'always produces output even in a fresh (no-actuals) scenario.',
     }),
   },
 
@@ -1845,20 +1856,92 @@ export const salesModel = defineModel({
       input: 'bs_summary_monthly',
       op: ops.join('bs_monthly_actuals_t', [{ left: 'month_idx', right: 'month_idx' }], 'left'),
     }),
+
+    // ─── Cash projection anchor ─────────────────────────────────────────────
+    // After the actuals period ends the indirect-method cash formula restarts
+    // from opening_cash, which doesn't match the last known Xero bank balance.
+    // Fix: compute drift = actual_last − formula_last and add it to every
+    // projected month so projections pick up continuously from the last actual.
+    step({
+      id: 'cash_actuals_only',
+      name: 'Months with actual bank balance (for anchor)',
+      input: 'bs_summary_monthly_joined_actuals',
+      op: ops.filter(ne(col('cash_actual'), lit(null))),
+    }),
+    step({
+      id: 'cash_actuals_sorted',
+      name: 'Actual-cash months sorted ascending',
+      input: 'cash_actuals_only',
+      op: ops.sort([{ column: 'month_idx', desc: false }]),
+    }),
+    step({
+      id: 'cash_actuals_anchor_raw',
+      name: 'Last actual cash and formula cash at last actuals month',
+      description:
+        'Collapses all actuals months to a single row: ' +
+        'last_actual_cash = Xero bank balance for the most recent actuals month; ' +
+        'last_formula_cash = what the indirect-method formula gives for that same month. ' +
+        'Empty when no actuals are loaded (no-actuals case handled by union with null fallback).',
+      input: 'cash_actuals_sorted',
+      op: ops.groupBy([], {
+        last_actual_cash: agg.last('cash_actual'),
+        last_formula_cash: agg.last('cash'),
+      }),
+    }),
+    step({
+      id: 'cash_anchor_with_fallback',
+      name: 'Cash anchor union with null fallback (guarantees ≥1 row)',
+      description:
+        'Unions cash_actuals_anchor_raw with the single-row null literal so the ' +
+        'downstream cross-join always returns output even when no actuals are loaded.',
+      input: 'cash_actuals_anchor_raw',
+      op: ops.union(['cash_projection_anchor_null_t']),
+    }),
+    step({
+      id: 'cash_projection_anchor_t',
+      name: 'Cash projection anchor scalar (resolved, single row)',
+      description:
+        'agg.max ignores nulls, so the real value from cash_actuals_anchor_raw wins ' +
+        'over the null fallback. Result: last_actual_cash and last_formula_cash are ' +
+        'real numbers when actuals exist, both null when they do not.',
+      input: 'cash_anchor_with_fallback',
+      op: ops.groupBy([], {
+        last_actual_cash: agg.max('last_actual_cash'),
+        last_formula_cash: agg.max('last_formula_cash'),
+      }),
+    }),
+    step({
+      id: 'bs_summary_monthly_joined_with_anchor',
+      name: 'Monthly BS with actuals joined + cash projection anchor',
+      description: 'Cross-join cash_projection_anchor_t into every BS row so the drift is available during the actuals overlay map.',
+      input: 'bs_summary_monthly_joined_actuals',
+      op: ops.cross('cash_projection_anchor_t'),
+    }),
+
     step({
       id: 'bs_summary_monthly_with_actuals_lines',
       name: 'Monthly balance sheet lines with actuals overlay',
       description:
         'For each balance sheet line in each month, use the override value if provided; ' +
-        'otherwise fall back to the modeled balance.',
-      input: 'bs_summary_monthly_joined_actuals',
+        'otherwise fall back to the modeled balance. For cash specifically, projected ' +
+        'months (no actual) are shifted by drift = last_actual_cash − last_formula_cash ' +
+        'so that projections pick up continuously from the last known Xero bank balance.',
+      input: 'bs_summary_monthly_joined_with_anchor',
       op: ops.map({
         intangible_assets: iff(eq(col('intangible_assets_actual'), lit(null)), col('intangible_assets'), col('intangible_assets_actual')),
         tangible_assets: iff(eq(col('tangible_assets_actual'), lit(null)), col('tangible_assets'), col('tangible_assets_actual')),
         trade_debtors: iff(eq(col('trade_debtors_actual'), lit(null)), col('trade_debtors'), col('trade_debtors_actual')),
         other_debtors: iff(eq(col('other_debtors_actual'), lit(null)), col('other_debtors'), col('other_debtors_actual')),
         vat: iff(eq(col('vat_actual'), lit(null)), col('vat'), col('vat_actual')),
-        cash: iff(eq(col('cash_actual'), lit(null)), col('cash'), col('cash_actual')),
+        cash: iff(
+          ne(col('cash_actual'), lit(null)),
+          col('cash_actual'),
+          iff(
+            eq(col('last_actual_cash'), lit(null)),
+            col('cash'),
+            add(col('cash'), sub(col('last_actual_cash'), col('last_formula_cash'))),
+          ),
+        ),
         trade_creditors: iff(eq(col('trade_creditors_actual'), lit(null)), col('trade_creditors'), col('trade_creditors_actual')),
         deferred_revenue: iff(eq(col('deferred_revenue_actual'), lit(null)), col('deferred_revenue'), col('deferred_revenue_actual')),
         other_creditors: iff(eq(col('other_creditors_actual'), lit(null)), col('other_creditors'), col('other_creditors_actual')),

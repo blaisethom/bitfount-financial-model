@@ -31,6 +31,7 @@ import { AIAssistant, buildSystemPrompt } from './components/AIAssistant';
 import ReportDefinitionEditor from './report/ReportDefinitionEditor';
 import YamlViewer from './components/YamlViewer';
 import { type SavedModel, loadSavedModels, persistSavedModels } from './modelStore';
+import NotificationsPanel, { type SyncNotification } from './components/NotificationsPanel';
 import { weeklyCashflowModel } from './models/weeklyCashflowModel';
 import { evaluateModel, type EvalResult, type Row, type Table } from './engine';
 import { cashflowReport } from './report/cashflowReport';
@@ -276,6 +277,17 @@ export default function App() {
   const updateHubSpotSync = (next: HubSpotSyncAssumptions) =>
     setInput((prev) => ({ ...prev, hubspotSync: next }));
 
+  const NOTIF_KEY = 'sync_notifications_v1';
+  const [notifications, setNotifications] = useState<SyncNotification[]>(() => {
+    try { return JSON.parse(localStorage.getItem(NOTIF_KEY) ?? '[]'); }
+    catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem(NOTIF_KEY, JSON.stringify(notifications)); }, [notifications]);
+  const addNotification = (level: 'info' | 'error', msg: string) => {
+    const n: SyncNotification = { id: Math.random().toString(36).slice(2), ts: new Date().toISOString(), level, msg };
+    setNotifications(prev => [n, ...prev].slice(0, 50));
+  };
+
   const runHubSpotSync = async () => {
     const result = await syncHubSpot(
       input.dates,
@@ -301,7 +313,9 @@ export default function App() {
     if (meta.newLineItemNames.length) parts.push(`+${meta.newLineItemNames.length} new line items`);
     if (meta.unknownStages.length) parts.push(`unknown stages: ${meta.unknownStages.join(', ')}`);
     if (meta.unknownLineItemNames.length) parts.push(`unmapped: ${meta.unknownLineItemNames.length}`);
-    return parts.join(' · ');
+    const summary = parts.join(' · ');
+    addNotification('info', `HubSpot sync: ${summary}`);
+    return summary;
   };
 
   const reset = resetActiveScenario;
@@ -372,10 +386,17 @@ export default function App() {
         activeId: id,
       }));
       setReset(syncedInput);
+      const disconnected = data.disconnectedOrgs ?? [];
+      if (disconnected.length > 0) {
+        addNotification('warn', `Xero: ${disconnected.join(', ')} org(s) not connected — re-add in prokura dashboard for full data`);
+      }
+      addNotification('info', `Xero sync: ${xeroSummary}`);
       setSyncPill(`✓ ${xeroSummary}`);
       setTimeout(() => setSyncPill(null), 6000);
       return xeroSummary;
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addNotification('error', `Xero sync failed: ${msg}`);
       setSyncPill(null);
       throw err;
     }
@@ -454,6 +475,10 @@ export default function App() {
             </Button>
           </div>
           )}
+          <NotificationsPanel
+            notifications={notifications}
+            onClear={() => setNotifications([])}
+          />
           <HeaderMenu
             onReset={reset}
             onDownload={async () => {
