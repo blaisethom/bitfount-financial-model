@@ -293,10 +293,13 @@ function xeroPlugin(): Plugin {
 
           // ── Bank balances from Xero BalanceSheet report ──────────────────
           //
-          // `Reports/BalanceSheet?timeframe=MONTH&periods=N` returns N+1
-          // column headers (label + N months, newest first). We parse the
-          // "Bank" section's SummaryRow to get total bank balance per month.
-          // Failures are non-fatal — invoices still populate P&L data.
+          // `Reports/BalanceSheet?timeframe=MONTH&periods=N` (max periods=11)
+          // returns one column per month. We extract the total bank balance
+          // per month using two strategies:
+          //   1. Find a SummaryRow whose first cell matches /bank/i ("Total Bank", etc.)
+          //   2. Fall back: sum all Row items directly inside sections whose
+          //      Title matches /bank/i (handles orgs with unusual section names)
+          // Errors are surfaced in the response so the client can display them.
 
           type BSCell = { Value?: string }
           type BSRow = { RowType?: string; Title?: string; Cells?: BSCell[]; Rows?: BSRow[] }
@@ -304,38 +307,69 @@ function xeroPlugin(): Plugin {
 
           function parseMonthLabel(s: string): string | null {
             const SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            // Handles "31 Jan 2026", "Jan 2026", "January 2026"
             const m = /(\w{3,})\s+(\d{4})/.exec(s)
             if (!m) return null
-            const mo = SHORT.findIndex(x => m[1].slice(0,3) === x) + 1
-            return mo > 0 ? `${m[2]}-${String(mo).padStart(2,'0')}` : null
+            const mo = SHORT.findIndex(x => m[1].slice(0, 3) === x) + 1
+            return mo > 0 ? `${m[2]}-${String(mo).padStart(2, '0')}` : null
           }
 
-          // Recursively collect amounts from Row items inside any section
-          // whose Title is "Bank" (case-insensitive). Uses individual Row
-          // values rather than SummaryRow to avoid double-counting when bank
-          // accounts are spread across sub-sections.
-          function collectBankRows(
+          function cellVal(cells: BSCell[], i: number, fxRate: number): number {
+            const raw = (cells[i]?.Value ?? '').replace(/,/g, '').trim()
+            const n = parseFloat(raw)
+            return isNaN(n) ? 0 : n * fxRate
+          }
+
+          function accumulateCells(
+            cells: BSCell[],
+            colMonths: (string | null)[],
+            fxRate: number,
+            out: Record<string, number>,
+          ): void {
+            for (let i = 1; i < cells.length; i++) {
+              const month = colMonths[i]
+              if (!month) continue
+              const v = cellVal(cells, i, fxRate)
+              if (v !== 0) out[month] = (out[month] ?? 0) + v
+            }
+          }
+
+          // Strategy 1: find the first SummaryRow whose label cell mentions "bank".
+          // In standard Xero chart of accounts this is "Total Bank".
+          function findBankSummaryRow(rows: BSRow[]): BSRow | null {
+            for (const row of rows) {
+              if (row.RowType === 'SummaryRow' && row.Cells) {
+                const label = (row.Cells[0]?.Value ?? '').toLowerCase()
+                if (label.includes('bank')) return row
+              }
+              if (row.Rows) {
+                const found = findBankSummaryRow(row.Rows)
+                if (found) return found
+              }
+            }
+            return null
+          }
+
+          // Strategy 2: recursively sum Row items inside sections whose Title
+          // matches /bank/i (handles orgs where there's no summary row or the
+          // label doesn't mention "bank").
+          function sumBankSectionRows(
             rows: BSRow[],
-            colMonths: (string|null)[],
+            colMonths: (string | null)[],
             fxRate: number,
             inBank = false,
-          ): Record<string,number> {
-            const out: Record<string,number> = {}
+          ): Record<string, number> {
+            const out: Record<string, number> = {}
             for (const row of rows) {
               const title = (row.Title ?? '').trim()
-              const nowInBank = inBank || /^bank$/i.test(title)
+              const nowInBank = inBank || /bank/i.test(title)
               if (row.Rows) {
-                const sub = collectBankRows(row.Rows, colMonths, fxRate, nowInBank)
+                const sub = sumBankSectionRows(row.Rows, colMonths, fxRate, nowInBank)
                 for (const [k, v] of Object.entries(sub)) out[k] = (out[k] ?? 0) + v
               }
-              if (nowInBank && !inBank) continue // don't double-count section header cells
+              // Only accumulate individual account rows (not SummaryRows to avoid double-counting)
               if (inBank && row.RowType === 'Row' && row.Cells) {
-                for (let i = 1; i < row.Cells.length; i++) {
-                  const month = colMonths[i]
-                  if (!month) continue
-                  const val = parseFloat((row.Cells[i]?.Value ?? '').replace(/,/g, ''))
-                  if (!isNaN(val)) out[month] = (out[month] ?? 0) + val * fxRate
-                }
+                accumulateCells(row.Cells, colMonths, fxRate, out)
               }
             }
             return out
@@ -344,38 +378,59 @@ function xeroPlugin(): Plugin {
           async function fetchBankBalances(
             fetchFn: (path: string) => Promise<unknown>,
             fxRate: number,
-          ): Promise<Record<string,number>> {
-            if (completedMonths.length === 0) return {}
+          ): Promise<{ balances: Record<string, number>; strategy: string }> {
+            if (completedMonths.length === 0) return { balances: {}, strategy: 'no months' }
             const lastMonth = completedMonths[completedMonths.length - 1]
             const [y, mo] = lastMonth.split('-').map(Number)
             const lastDay = new Date(y, mo, 0).getDate()
-            const dateParam = `${lastMonth}-${String(lastDay).padStart(2,'0')}`
-            const periods = completedMonths.length - 1
+            const dateParam = `${lastMonth}-${String(lastDay).padStart(2, '0')}`
+            // Xero periods param: 1–11; 0 = current period only (same as 1)
+            const periods = Math.min(Math.max(completedMonths.length - 1, 1), 11)
 
             const resp = await fetchFn(
-              `/api.xro/2.0/Reports/BalanceSheet?date=${dateParam}&periods=${periods}&timeframe=MONTH&paymentsOnly=false`,
+              `/api.xro/2.0/Reports/BalanceSheet?date=${dateParam}&periods=${periods}&timeframe=MONTH`,
             ) as BSResp
 
             const rows = resp.Reports?.[0]?.Rows ?? []
+            if (!rows.length) return { balances: {}, strategy: 'empty report' }
+
             const headerRow = rows.find(r => r.RowType === 'Header')
-            if (!headerRow?.Cells) return {}
+            if (!headerRow?.Cells) return { balances: {}, strategy: 'no header' }
 
             const colMonths = headerRow.Cells.map((c, i) =>
               i === 0 ? null : parseMonthLabel(c.Value ?? ''),
             )
-            return collectBankRows(rows, colMonths, fxRate)
+
+            // Strategy 1: use "Total Bank" summary row
+            const summaryRow = findBankSummaryRow(rows)
+            if (summaryRow?.Cells) {
+              const balances: Record<string, number> = {}
+              accumulateCells(summaryRow.Cells, colMonths, fxRate, balances)
+              if (Object.keys(balances).length > 0) {
+                return { balances, strategy: `summary:"${summaryRow.Cells[0]?.Value}"` }
+              }
+            }
+
+            // Strategy 2: sum individual rows under bank sections
+            const balances = sumBankSectionRows(rows, colMonths, fxRate)
+            return {
+              balances,
+              strategy: Object.keys(balances).length > 0 ? 'section-rows' : 'none-found',
+            }
           }
 
           const bankBalances: Record<string, number> = {}
+          let bankBalancesNote = ''
           try {
-            const [incBank, ltdBank] = await Promise.all([
+            const [incResult, ltdResult] = await Promise.all([
               fetchBankBalances(incFetch, 1.0),
               fetchBankBalances(ltdFetch, GBP_USD),
             ])
-            for (const [k, v] of Object.entries(incBank)) bankBalances[k] = (bankBalances[k] ?? 0) + v
-            for (const [k, v] of Object.entries(ltdBank)) bankBalances[k] = (bankBalances[k] ?? 0) + v
-          } catch (_err) {
-            // Balance sheet fetch is best-effort; invoice data still returned
+            for (const [k, v] of Object.entries(incResult.balances)) bankBalances[k] = (bankBalances[k] ?? 0) + v
+            for (const [k, v] of Object.entries(ltdResult.balances)) bankBalances[k] = (bankBalances[k] ?? 0) + v
+            bankBalancesNote = `inc:${incResult.strategy} ltd:${ltdResult.strategy}`
+          } catch (bankErr) {
+            bankBalancesNote = `error: ${bankErr instanceof Error ? bankErr.message : String(bankErr)}`
           }
 
           res.statusCode = 200
@@ -388,6 +443,7 @@ function xeroPlugin(): Plugin {
             monthly,
             accounts,
             bankBalances,
+            bankBalancesNote,
           }))
         } catch (err) {
           res.statusCode = 500

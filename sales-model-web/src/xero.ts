@@ -29,6 +29,8 @@ export interface XeroSyncSuccess {
    * empty object if the balance sheet fetch failed.
    */
   bankBalances: Record<string, number>;
+  /** Diagnostic note explaining which parse strategy was used or any error. */
+  bankBalancesNote?: string;
 }
 
 export interface XeroSyncFailure {
@@ -187,7 +189,10 @@ export function buildActualsFromXero(
   const deptMonths = depts.reduce((n, d) => n + Object.keys(costDeptMonthly[d]).length, 0);
   const lineCount = Object.keys(costLineMonthly).length;
   const cashMonths = Object.keys(bsMonthly).length;
-  const summary = `${pnlCount} revenue/COS months · ${deptMonths} dept cost months · ${lineCount} cost line accounts · ${cashMonths} cash balance${cashMonths !== 1 ? 's' : ''} (${range})`;
+  const cashNote = cashMonths > 0
+    ? `${cashMonths} cash balance${cashMonths !== 1 ? 's' : ''}`
+    : `no cash balances${data.bankBalancesNote ? ` [${data.bankBalancesNote}]` : ''}`;
+  const summary = `${pnlCount} revenue/COS months · ${deptMonths} dept cost months · ${lineCount} cost line accounts · ${cashNote} (${range})`;
 
   return { actuals, summary, months: data.completedMonths };
 }
